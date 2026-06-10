@@ -1,0 +1,50 @@
+from functools import lru_cache
+from typing import List
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    dstv_api_base_url: str = "https://dstv.stream"
+    dstv_license_base_url: str = "https://licensev2.dstv.com"
+    dstv_platform_id: str = "32faad53-5e7b-4cc0-9f33-000092e85950"
+    dstv_country_code: str = "ZA"
+    dstv_package_id: str = "PREMIUM"
+    dstv_crm_id: str = "afl"
+    dstv_account_id: str = "afl"
+    dstv_client_ip: str = ""
+    dstv_proxy_url: str = ""
+    # Spoofing X-Forwarded-For breaks DStv Connect JWT verification on catalog APIs.
+    dstv_send_client_ip_headers: bool = False
+
+    backend_cors_origins: str = "http://localhost:3000"
+    backend_secret_key: str = "dev-secret-change-in-production"
+    backend_host: str = "0.0.0.0"
+    backend_port: int = 8000
+
+    cache_ttl_navigation: int = 300
+    cache_ttl_catalog: int = 120
+
+    database_url: str = "sqlite+aiosqlite:///./streamhub.db"
+
+    dstv_connect_token: str = ""
+    dstv_cookie: str = ""
+    dstv_profile_id: str = ""
+    dstv_waf_token: str = ""
+
+    widevine_device_path: str = "../../../device/google_aosp_on_ia_emulator_14.0.0_b2d6507a_4464_l3.wvd"
+
+    @property
+    def cors_origins(self) -> List[str]:
+        return [o.strip() for o in self.backend_cors_origins.split(",") if o.strip()]
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

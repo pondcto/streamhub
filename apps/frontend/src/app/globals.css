@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-surface text-gray-100 antialiased;
+}
+
+@layer utilities {
+  .card-hover {
+    @apply transition-transform duration-200 hover:scale-[1.02] hover:shadow-xl hover:shadow-black/40;
+  }
+}
