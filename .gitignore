@@ -8,13 +8,6 @@ Thumbs.db
 *.swp
 *.swo
 
-# Environment & secrets (keep *.example templates)
-.env
-.env.local
-.env.*.local
-!.env.example
-!**/.env.example
-
 # Backend (Python / FastAPI)
 .venv/
 venv/
