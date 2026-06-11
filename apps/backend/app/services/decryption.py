@@ -13,6 +13,7 @@ from app.services.auth import (
 )
 from app.services.dstv_client import DStvAPIError, DStvClient, is_expired
 from app.services.entitlement import EntitlementError
+from app.services.entitlement_ingest import get_ingested_entitlement_session
 from app.services.entitlement_response import parse_entitlement_response
 from app.services.irdeto_content import license_content_id_candidates
 from app.services.manifest_parser import ManifestParserError, fetch_manifest_drm_data
@@ -86,6 +87,17 @@ class DecryptionService:
         channel_tag: Optional[str],
         entitlement_content_ids: List[str],
     ) -> dict:
+        for entitlement_id in entitlement_content_ids:
+            ingested = get_ingested_entitlement_session(entitlement_id)
+            if ingested is not None:
+                logger.info(
+                    "Using browser-ingested entitlement for %s (matched %s).",
+                    content_id,
+                    entitlement_id,
+                )
+                ingested["manifest_url"] = ingested.get("manifest_url") or manifest_url
+                return ingested
+
         content_session = get_irdeto_session_for_content(content_id)
         global_session = get_irdeto_session()
         connect_jwt_active = bool(
@@ -155,9 +167,8 @@ class DecryptionService:
 
                 if last_error and last_error.status_code in (401, 403):
                     raise EntitlementError(
-                        "Entitlement denied and no valid Irdeto session is saved for this title. "
-                        "Play it on dstv.stream so the extension can capture irdeto_session_jwt "
-                        "with content_id.",
+                        "Entitlement blocked from server (WAF). Play this title on dstv.stream "
+                        "and POST the entitlement JSON to /api/get-dstv-entitlement/ with content_id.",
                         status_code=last_error.status_code,
                         code="ENTITLEMENT_DENIED",
                     ) from last_error
@@ -284,7 +295,11 @@ class DecryptionService:
                 code="MANIFEST_ERROR",
             ) from exc
 
-        entitlement_drm_id = drm_content_id if session_source == "entitlement" else None
+        entitlement_drm_id = (
+            drm_content_id
+            if session_source in {"entitlement", "browser_entitlement"}
+            else None
+        )
         manifest_drm_id = manifest.get("drm_content_id")
         drm_content_id = manifest_drm_id or drm_content_id
         pssh = manifest.get("pssh") or ""

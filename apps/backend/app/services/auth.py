@@ -582,8 +582,10 @@ def get_session_info() -> Optional[SessionInfo]:
 def initialize_session() -> None:
     """Load a saved UI session when present."""
     from app.services.catalog_ingest import load_persisted_ingest
+    from app.services.entitlement_ingest import load_persisted_entitlement_ingest
 
     load_persisted_ingest()
+    load_persisted_entitlement_ingest()
     if _load_persisted_session():
         info = get_session_info()
         if info:

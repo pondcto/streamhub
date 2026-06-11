@@ -28,11 +28,16 @@ def license_content_id_candidates(
             return
         candidates.append(normalized)
 
-    add(entitlement_content_id)
-    add(manifest_content_id)
-    if manifest_content_id and not manifest_content_id.endswith("_ext"):
-        add(f"{manifest_content_id}_ext")
-    if entitlement_content_id and not entitlement_content_id.endswith("_ext"):
-        add(f"{entitlement_content_id}_ext")
-    add(fallback_content_id)
+    def add_variants(value: Optional[str]) -> None:
+        if not value:
+            return
+        normalized = value.strip()
+        base = normalized[:-4] if normalized.lower().endswith("_ext") else normalized
+        add(base)
+        if not base.lower().endswith("_ext"):
+            add(f"{base}_ext")
+
+    add_variants(entitlement_content_id)
+    add_variants(manifest_content_id)
+    add_variants(fallback_content_id)
     return candidates

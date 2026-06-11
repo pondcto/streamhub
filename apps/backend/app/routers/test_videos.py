@@ -17,6 +17,7 @@ from app.services.normalizers import (
     normalize_test_season_item,
     normalize_test_video_card,
 )
+from app.services.dstv_channel_logos import channel_logo_for_tag
 from app.services.test_items import TEST_ITEMS, TestItemSpec, find_test_item
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ def _fallback_test_card(spec: TestItemSpec) -> TestVideoCard:
         title=spec.title or f"Test {spec.id}",
         type=spec.content_type,
         category=spec.category,
-        image=spec.image_hint,
+        image=spec.image_hint or channel_logo_for_tag(spec.channel_tag or spec.id),
         duration=None,
         description=spec.description,
         channel_tag=spec.channel_tag,
@@ -62,7 +63,7 @@ def _live_test_card(spec: TestItemSpec, channel: Optional[LiveChannel]) -> TestV
         category=spec.category,
         description=spec.description or channel.currentEvent,
         duration=channel.duration,
-        image=channel.image or spec.image_hint,
+        image=channel.image or spec.image_hint or channel_logo_for_tag(spec.channel_tag or spec.id),
         channel_tag=spec.channel_tag or channel.channelTag,
         manifest_hint=spec.manifest_hint,
         playable=True,

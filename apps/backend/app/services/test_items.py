@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Literal, Optional
 
+from app.services.dstv_channel_logos import channel_logo_for_tag
+
 
 @dataclass(frozen=True)
 class TestItemSpec:
@@ -40,7 +42,7 @@ TEST_ITEMS: tuple[TestItemSpec, ...] = (
         manifest_hint="USL04/FHD/FHD.isml/.mpd",
         title="SuperSport FHD",
         description="Live sport linear channel (576p mobile filter).",
-        image_hint="https://cdn.dstv.com/dstvcms/2020/09/01/SS_Logo_Rugby_4-3_001_xlrg.png",
+        image_hint=channel_logo_for_tag("FHD"),
     ),
     TestItemSpec(
         id="SS127028_SOC060626WCFBELVTUNHD10_SUN",
@@ -67,9 +69,6 @@ TEST_ITEMS: tuple[TestItemSpec, ...] = (
         channel_tag="MSH",
         title="SuperSport Football",
         description="Live football and sport coverage.",
-        image_hint=(
-            "https://images.dstv.stream/images/content/2025/09/11/"
-            "16x9_Genre_Sport_Football_pre_thumb.jpg"
-        ),
+        image_hint=channel_logo_for_tag("MSH"),
     ),
 )

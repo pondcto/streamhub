@@ -12,6 +12,7 @@ from app.routers import (
     catalog,
     catalog_ingest,
     decryption,
+    entitlement_ingest,
     health,
     live,
     navigation,
@@ -66,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(tracked_session.router)
     app.include_router(catalog_ingest.router)
+    app.include_router(entitlement_ingest.router)
 
     @app.exception_handler(EntitlementError)
     async def entitlement_error_handler(request: Request, exc: EntitlementError):
