@@ -38,79 +38,120 @@ class DecryptionService:
             )
 
         manual_session = get_irdeto_session()
+
+        if user_access_token:
+            async with DStvClient(self.settings) as client:
+                try:
+                    entitlement_data = await client.request_entitlement_session(
+                        content_id=content_id,
+                        content_type=content_type,
+                        user_access_token=user_access_token,
+                        channel_tag=channel_tag,
+                        manifest_hint=manifest_url,
+                    )
+                except DStvAPIError as exc:
+                    if manual_session:
+                        logger.info(
+                            "Entitlement API failed for %s — falling back to saved Irdeto session.",
+                            content_id,
+                        )
+                        return await self._generate_keys_with_manual_session(
+                            content_id=content_id,
+                            manifest_url=manifest_url,
+                            ls_session=manual_session,
+                        )
+                    if exc.status_code in (401, 403):
+                        raise EntitlementError(
+                            "Entitlement denied or auth token expired. Paste a fresh Irdeto session JWT "
+                            "from your browser while playing this title on the admin page.",
+                            status_code=exc.status_code,
+                            code="ENTITLEMENT_DENIED",
+                        ) from exc
+                    raise EntitlementError(
+                        "Failed to obtain entitlement session from DStv API.",
+                        status_code=502,
+                        code="ENTITLEMENT_API_ERROR",
+                    ) from exc
+
+                resolved_manifest, ls_session, expires_at, drm_content_id, streaming_filter = (
+                    parse_entitlement_response(
+                        entitlement_data,
+                        content_id,
+                        manifest_url,
+                        self.settings,
+                    )
+                )
+
+                if not ls_session:
+                    if manual_session:
+                        logger.info(
+                            "Entitlement response missing session for %s — using saved Irdeto session.",
+                            content_id,
+                        )
+                        return await self._generate_keys_with_manual_session(
+                            content_id=content_id,
+                            manifest_url=manifest_url,
+                            ls_session=manual_session,
+                        )
+                    raise EntitlementError(
+                        "Entitlement response did not include a session token.",
+                        status_code=502,
+                        code="ENTITLEMENT_INCOMPLETE",
+                    )
+
+                if is_expired(expires_at):
+                    raise EntitlementError(
+                        "Entitlement session already expired.",
+                        status_code=403,
+                        code="SESSION_EXPIRED",
+                    )
+
+                return await self._generate_keys_with_session(
+                    content_id=content_id,
+                    manifest_url=resolved_manifest or manifest_url,
+                    ls_session=ls_session,
+                    expires_at=expires_at,
+                    drm_content_id=drm_content_id,
+                    streaming_filter=streaming_filter,
+                    client=client,
+                )
+
         if manual_session:
-            logger.info("Using manually configured Irdeto session for content %s", content_id)
-            return await self._generate_keys_with_session(
+            logger.info("Using saved Irdeto session for content %s (no Connect JWT)", content_id)
+            return await self._generate_keys_with_manual_session(
                 content_id=content_id,
                 manifest_url=manifest_url,
                 ls_session=manual_session,
-                expires_at=parse_session_info(manual_session).expires_at
-                or datetime.now(timezone.utc),
-                drm_content_id=content_id,
-                streaming_filter=None,
             )
 
-        if not user_access_token:
+        raise EntitlementError(
+            "DStv user authorization required. Save Connect JWT or Irdeto session on the admin page.",
+            status_code=403,
+            code="DSTV_AUTH_REQUIRED",
+        )
+
+    async def _generate_keys_with_manual_session(
+        self,
+        *,
+        content_id: str,
+        manifest_url: str,
+        ls_session: str,
+    ) -> DecryptionKeysResponse:
+        expires_at = parse_session_info(ls_session).expires_at or datetime.now(timezone.utc)
+        if is_expired(expires_at):
             raise EntitlementError(
-                "DStv user authorization required. Configure a session token first.",
+                "Irdeto session already expired. Play the title on dstv.stream and paste a fresh session JWT.",
                 status_code=403,
-                code="DSTV_AUTH_REQUIRED",
+                code="SESSION_EXPIRED",
             )
-
-        async with DStvClient(self.settings) as client:
-            try:
-                entitlement_data = await client.request_entitlement_session(
-                    content_id=content_id,
-                    content_type=content_type,
-                    user_access_token=user_access_token,
-                    channel_tag=channel_tag,
-                    manifest_hint=manifest_url,
-                )
-            except DStvAPIError as exc:
-                if exc.status_code in (401, 403):
-                    raise EntitlementError(
-                        "Entitlement denied or auth token expired. Paste the Irdeto session JWT from your browser entitlement response on the admin page.",
-                        status_code=exc.status_code,
-                        code="ENTITLEMENT_DENIED",
-                    ) from exc
-                raise EntitlementError(
-                    "Failed to obtain entitlement session from DStv API.",
-                    status_code=502,
-                    code="ENTITLEMENT_API_ERROR",
-                ) from exc
-
-            resolved_manifest, ls_session, expires_at, drm_content_id, streaming_filter = (
-                parse_entitlement_response(
-                    entitlement_data,
-                    content_id,
-                    manifest_url,
-                    self.settings,
-                )
-            )
-
-            if not ls_session:
-                raise EntitlementError(
-                    "Entitlement response did not include a session token.",
-                    status_code=502,
-                    code="ENTITLEMENT_INCOMPLETE",
-                )
-
-            if is_expired(expires_at):
-                raise EntitlementError(
-                    "Entitlement session already expired.",
-                    status_code=403,
-                    code="SESSION_EXPIRED",
-                )
-
-            return await self._generate_keys_with_session(
-                content_id=content_id,
-                manifest_url=resolved_manifest or manifest_url,
-                ls_session=ls_session,
-                expires_at=expires_at,
-                drm_content_id=drm_content_id,
-                streaming_filter=streaming_filter,
-                client=client,
-            )
+        return await self._generate_keys_with_session(
+            content_id=content_id,
+            manifest_url=manifest_url,
+            ls_session=ls_session,
+            expires_at=expires_at,
+            drm_content_id=content_id,
+            streaming_filter=None,
+        )
 
     async def _generate_keys_with_session(
         self,
@@ -169,8 +210,15 @@ class DecryptionService:
                     license_url=license_url,
                 )
             except WidevineKeyError as exc:
+                message = str(exc)
+                if exc.status_code == 403:
+                    message = (
+                        "License server rejected the challenge (403). The Irdeto session must be "
+                        "captured while playing this exact title on dstv.stream, or use a valid "
+                        "Connect JWT so StreamHub can request a fresh entitlement session."
+                    )
                 raise EntitlementError(
-                    str(exc),
+                    message,
                     status_code=exc.status_code,
                     code="KEY_GENERATION_FAILED",
                 ) from exc

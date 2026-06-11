@@ -110,12 +110,6 @@ class EntitlementService:
             )
 
             manual_session = get_irdeto_session()
-            if manual_session and resolved_manifest:
-                return await self._build_playback_from_irdeto_session(
-                    content_id=content_id,
-                    manifest_url=resolved_manifest,
-                    ls_session=manual_session,
-                )
 
             if not user_access_token:
                 if manual_session and not resolved_manifest:
