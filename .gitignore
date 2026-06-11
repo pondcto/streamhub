@@ -25,6 +25,7 @@ build/
 
 # Runtime session state (JWTs, tokens — never commit)
 .streamhub_session.json
+.streamhub_catalog_ingest.json
 
 # Frontend (Next.js)
 node_modules/

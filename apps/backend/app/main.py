@@ -10,6 +10,7 @@ from app.middleware.logging import RedactingAccessLogMiddleware
 from app.routers import (
     auth_router,
     catalog,
+    catalog_ingest,
     decryption,
     health,
     live,
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(decryption.router)
     app.include_router(auth_router.router)
     app.include_router(tracked_session.router)
+    app.include_router(catalog_ingest.router)
 
     @app.exception_handler(EntitlementError)
     async def entitlement_error_handler(request: Request, exc: EntitlementError):

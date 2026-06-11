@@ -40,6 +40,8 @@ class SessionInfo(BaseModel):
     device_type: Optional[str] = None
     active: bool = False
     catalog_auth_configured: bool = False
+    catalog_auth_ready: bool = False
+    catalog_auth_issue: Optional[str] = None
     profile_id_configured: bool = False
     waf_token_configured: bool = False
     irdeto_session_configured: bool = False

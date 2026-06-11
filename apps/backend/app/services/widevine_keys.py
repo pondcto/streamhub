@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 import httpx
 from pywidevine.cdm import Cdm
@@ -41,7 +41,6 @@ def generate_widevine_keys(
     settings: Settings,
     pssh_b64: str,
     license_url: str,
-    proxy_url: Optional[str] = None,
 ) -> List[dict]:
     if not pssh_b64:
         raise WidevineKeyError("Manifest did not contain a Widevine PSSH.", status_code=502)
@@ -53,11 +52,9 @@ def generate_widevine_keys(
 
     try:
         challenge = cdm.get_license_challenge(session_id, PSSH(pssh_b64))
-        proxy = proxy_url or settings.dstv_proxy_url.strip() or None
 
         with httpx.Client(
             timeout=httpx.Timeout(30.0, connect=10.0),
-            proxy=proxy,
             follow_redirects=True,
         ) as client:
             response = client.post(

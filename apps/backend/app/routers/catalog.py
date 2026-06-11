@@ -5,6 +5,8 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.config import get_settings
 from app.models.catalog import CatalogCard, CatalogPageResponse, CatalogRail, CatalogResponse, SeasonDetailResponse
+from app.services.auth import catalog_auth_ready, get_connect_token_remaining_seconds
+from app.services.catalog_ingest import get_ingested_catalog_meta, get_ingested_catalog_raw
 from app.services.cache import metadata_cache
 from app.services.dstv_client import DStvAPIError, DStvClient
 from app.services.normalizers import (
@@ -22,43 +24,63 @@ router = APIRouter(prefix="/api", tags=["catalog"])
 VALID_SECTIONS = {"movies", "sport", "tvshows", "kids", "home"}
 
 LIVE_FALLBACK_NOTICE = (
-    "Showing live channels for this section. Catalog auth is missing — save Connect JWT, "
-    "profile ID, and WAF token on the Admin page."
+    "Showing live channels only. Save Connect JWT, profile ID, and WAF token on the Admin page "
+    "for the full sport catalog."
 )
 
-CATALOG_AUTH_FAILED_NOTICE = (
-    "DStv blocks server-side replay of the sport VOD page API (401). "
-    "Showing cached sport layout from fixture data. "
-    "Save a fresh Connect JWT, profile ID, and WAF token on Admin every ~15 minutes."
+CATALOG_AUTH_REJECTED_NOTICE = (
+    "DStv blocked server-side catalog replay (AWS WAF). WAF tokens are tied to your browser IP "
+    "and cannot be reused from the StreamHub server. POST the vod_sections/sports JSON response "
+    "from your browser extension to /api/get-dstv-catalog/ — or refresh auth and try again."
 )
 
-SPORT_FIXTURE_NOTICE = (
-    "Showing DStv sport layout from local fixture (Connect JWT expired or missing). "
-    "Refresh catalog auth on the Admin page for live catalog data."
+CATALOG_WAF_BLOCKED_NOTICE = (
+    "DStv returned an HTML WAF page instead of catalog JSON. Your Connect JWT may still be valid, "
+    "but the WAF token cannot be replayed from the server IP. Use /api/get-dstv-catalog/ to push "
+    "the sport catalog response captured in your browser."
 )
 
 
-def _sport_fixture_rails() -> list[CatalogRail]:
-    from app.fixtures.sport_page import load_sport_page_fixture
+def _catalog_failure_notice(exc: DStvAPIError | None, auth_issue: str | None) -> str:
+    if auth_issue:
+        return auth_issue
+    if exc and exc.status_code in (401, 403):
+        if get_connect_token_remaining_seconds() > 0:
+            return CATALOG_WAF_BLOCKED_NOTICE
+        return CATALOG_AUTH_REJECTED_NOTICE
+    if exc:
+        return str(exc) or CATALOG_AUTH_REJECTED_NOTICE
+    return CATALOG_AUTH_REJECTED_NOTICE
 
-    raw = load_sport_page_fixture()
+
+def _sport_page_from_ingest() -> CatalogPageResponse | None:
+    raw = get_ingested_catalog_raw("sport")
+    if raw is None:
+        return None
     rails = normalize_catalog_page(raw, "sport")
-    return rails if rails else []
-
-
-def _sport_fixture_response(notice: str | None = None) -> CatalogPageResponse | None:
-    rails = _sport_fixture_rails()
     if not rails:
         return None
+    meta = get_ingested_catalog_meta("sport")
+    notice = None
+    if meta and meta["remaining_seconds"] <= 120:
+        notice = (
+            "Showing browser-ingested sport catalog (expires soon). "
+            "Re-capture vod_sections/sports from dstv.stream."
+        )
     return CatalogPageResponse(
         section="sport",
         rails=rails,
-        source="fixture",
-        notice=notice or SPORT_FIXTURE_NOTICE,
+        source="browser_ingest",
+        notice=notice,
     )
 
 
-async def _live_fallback(client: DStvClient, section: str) -> CatalogResponse:
+async def _live_fallback(
+    client: DStvClient,
+    section: str,
+    *,
+    notice: str | None = None,
+) -> CatalogResponse:
     try:
         raw = await client.get_live_channels()
     except DStvAPIError as exc:
@@ -76,7 +98,7 @@ async def _live_fallback(client: DStvClient, section: str) -> CatalogResponse:
         section=section,
         items=items,
         source="live_fallback",
-        notice=LIVE_FALLBACK_NOTICE if items else None,
+        notice=notice if items else None,
     )
 
 
@@ -91,19 +113,21 @@ async def get_catalog(
         )
 
     settings = get_settings()
+    auth_ready, auth_issue = catalog_auth_ready()
 
     async with DStvClient(settings) as client:
-        if not client.has_catalog_auth():
+        if not auth_ready:
             cache_key = f"catalog:fallback:{section}"
             cached = metadata_cache.get(cache_key)
+            fallback_notice = auth_issue or LIVE_FALLBACK_NOTICE
             if cached is not None:
                 return CatalogResponse(
                     section=section,
                     items=cached,
                     source="live_fallback",
-                    notice=LIVE_FALLBACK_NOTICE if cached else None,
+                    notice=fallback_notice if cached else None,
                 )
-            response = await _live_fallback(client, section)
+            response = await _live_fallback(client, section, notice=fallback_notice)
             metadata_cache.set(cache_key, response.items, settings.cache_ttl_catalog)
             return response
 
@@ -121,15 +145,17 @@ async def get_catalog(
                     detail={"code": "NOT_FOUND", "message": f"Catalog section not found: {section}"},
                 ) from exc
             logger.warning("Catalog fetch failed for %s: %s", section, exc.detail or str(exc))
-            response = await _live_fallback(client, section)
-            if exc.status_code in (401, 403):
-                response.notice = CATALOG_AUTH_FAILED_NOTICE
+            response = await _live_fallback(
+                client,
+                section,
+                notice=_catalog_failure_notice(exc, auth_issue),
+            )
             metadata_cache.set(f"catalog:fallback:{section}", response.items, settings.cache_ttl_catalog)
             return response
 
         items = normalize_catalog(raw, section)
         if not items:
-            response = await _live_fallback(client, section)
+            response = await _live_fallback(client, section, notice=LIVE_FALLBACK_NOTICE)
             metadata_cache.set(f"catalog:fallback:{section}", response.items, settings.cache_ttl_catalog)
             return response
 
@@ -269,24 +295,16 @@ async def _live_fallback_rails(client: DStvClient, section: str, notice: str | N
 async def get_sport_page() -> CatalogPageResponse:
     section = "sport"
     settings = get_settings()
+    auth_ready, auth_issue = catalog_auth_ready()
+
+    ingested = _sport_page_from_ingest()
+    if ingested is not None:
+        return ingested
 
     async with DStvClient(settings) as client:
-        if not client.has_catalog_auth():
-            cache_key = "catalog:page:fixture:sport"
-            cached = metadata_cache.get(cache_key)
-            if cached is not None:
-                return CatalogPageResponse(
-                    section=section,
-                    rails=cached,
-                    source="fixture",
-                    notice=SPORT_FIXTURE_NOTICE,
-                )
-            fixture = _sport_fixture_response()
-            if fixture:
-                metadata_cache.set(cache_key, fixture.rails, settings.cache_ttl_catalog)
-                return fixture
-            response = await _live_fallback_rails(client, section)
-            metadata_cache.set("catalog:page:fallback:sport", response.rails, settings.cache_ttl_catalog)
+        if not auth_ready:
+            notice = auth_issue or LIVE_FALLBACK_NOTICE
+            response = await _live_fallback_rails(client, section, notice=notice)
             return response
 
         cache_key = "catalog:page:sport"
@@ -298,23 +316,13 @@ async def get_sport_page() -> CatalogPageResponse:
             raw = await client.get_vod_section(section)
         except DStvAPIError as exc:
             logger.warning("Sport page fetch failed: %s", exc.detail or str(exc))
-            notice = CATALOG_AUTH_FAILED_NOTICE if exc.status_code in (401, 403) else LIVE_FALLBACK_NOTICE
-            fixture = _sport_fixture_response(notice=notice)
-            if fixture:
-                metadata_cache.set("catalog:page:fixture:sport", fixture.rails, settings.cache_ttl_catalog)
-                return fixture
+            notice = _catalog_failure_notice(exc, auth_issue)
             response = await _sport_combined_fallback(client, notice=notice)
-            metadata_cache.set("catalog:page:fallback:sport", response.rails, settings.cache_ttl_catalog)
             return response
 
         rails = normalize_catalog_page(raw, section)
         if not rails:
-            fixture = _sport_fixture_response()
-            if fixture:
-                metadata_cache.set("catalog:page:fixture:sport", fixture.rails, settings.cache_ttl_catalog)
-                return fixture
-            response = await _sport_combined_fallback(client)
-            metadata_cache.set("catalog:page:fallback:sport", response.rails, settings.cache_ttl_catalog)
+            response = await _sport_combined_fallback(client, notice=LIVE_FALLBACK_NOTICE)
             return response
 
         metadata_cache.set(cache_key, rails, settings.cache_ttl_catalog)
@@ -332,10 +340,14 @@ async def get_season_detail(
 ) -> SeasonDetailResponse:
     settings = get_settings()
     async with DStvClient(settings) as client:
-        if not client.has_catalog_auth():
+        auth_ready, auth_issue = catalog_auth_ready()
+        if not auth_ready:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "DSTV_AUTH_REQUIRED", "message": "Catalog auth required on Admin page."},
+                detail={
+                    "code": "DSTV_AUTH_REQUIRED",
+                    "message": auth_issue or "Catalog auth required on Admin page.",
+                },
             )
         try:
             meta = await client.get_season_catalogue(stack_id, program_id, season_id)

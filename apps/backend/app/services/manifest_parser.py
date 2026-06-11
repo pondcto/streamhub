@@ -128,8 +128,7 @@ async def fetch_manifest_drm_data(
 
     owns_client = client is None
     if owns_client:
-        proxy = settings.dstv_proxy_url.strip() or None
-        client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0), proxy=proxy)
+        client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0))
 
     try:
         response = await client.get(mpd_url, headers=headers, follow_redirects=True)

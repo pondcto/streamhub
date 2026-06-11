@@ -64,7 +64,7 @@ export default function SportSeasonPage({
   const featured = detail?.videos[0];
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
+    <div className="w-full px-4 py-8 sm:px-6 lg:px-8">
       <Link
         href="/?section=sport"
         className="mb-6 inline-flex items-center gap-2 text-sm text-gray-400 transition-colors hover:text-white"

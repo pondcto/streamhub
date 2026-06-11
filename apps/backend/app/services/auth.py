@@ -91,6 +91,42 @@ def _catalog_auth_configured() -> bool:
     return bool(_catalog_connect_token or _catalog_cookie)
 
 
+def get_connect_token_remaining_seconds() -> int:
+    token = _catalog_connect_token or _active_token
+    if not token:
+        return 0
+    try:
+        return parse_session_info(token).remaining_seconds
+    except ValueError:
+        return 0
+
+
+def catalog_auth_ready() -> tuple[bool, Optional[str]]:
+    """Return whether catalog API calls have the credentials DStv expects."""
+    missing: list[str] = []
+    if not (_playback_profile_id or "").strip():
+        missing.append("profile ID")
+    if not (_playback_waf_token or "").strip():
+        missing.append("WAF token")
+
+    has_bearer = bool((_catalog_connect_token or _active_token or "").strip())
+    if not has_bearer and not (_catalog_cookie or "").strip():
+        missing.append("Connect JWT")
+
+    if missing:
+        return False, f"Catalog auth incomplete — save {', '.join(missing)} on the Admin page."
+
+    remaining = get_connect_token_remaining_seconds()
+    if has_bearer and remaining <= 0:
+        return (
+            False,
+            "Connect JWT has expired (~15 minutes). Capture a fresh Authorization token from a "
+            "successful vod_sections/sports request on dstv.stream and save on Admin.",
+        )
+
+    return True, None
+
+
 def _persist_session_state() -> None:
     if not _has_saved_settings():
         SESSION_STORE_PATH.unlink(missing_ok=True)
@@ -277,6 +313,9 @@ def set_session_token(
     info.catalog_auth_configured = _catalog_auth_configured()
     info.profile_id_configured = bool(_playback_profile_id)
     info.waf_token_configured = bool(_playback_waf_token)
+    ready, issue = catalog_auth_ready()
+    info.catalog_auth_ready = ready
+    info.catalog_auth_issue = issue
     info = _attach_saved_form_fields(info)
     _persist_session_state()
     logger.info("Session token updated (expires in %ss).", info.remaining_seconds)
@@ -321,7 +360,8 @@ def get_irdeto_session() -> Optional[str]:
 
 
 def has_catalog_auth() -> bool:
-    return _catalog_auth_configured()
+    ready, _ = catalog_auth_ready()
+    return ready
 
 
 def _ensure_session_data() -> Optional[SessionData]:
@@ -471,11 +511,17 @@ def get_session_info() -> Optional[SessionInfo]:
     info.catalog_auth_configured = _catalog_auth_configured()
     info.profile_id_configured = bool(_playback_profile_id)
     info.waf_token_configured = bool(_playback_waf_token)
+    ready, issue = catalog_auth_ready()
+    info.catalog_auth_ready = ready
+    info.catalog_auth_issue = issue
     return _attach_saved_form_fields(info)
 
 
 def initialize_session() -> None:
     """Load a saved UI session when present."""
+    from app.services.catalog_ingest import load_persisted_ingest
+
+    load_persisted_ingest()
     if _load_persisted_session():
         info = get_session_info()
         if info:

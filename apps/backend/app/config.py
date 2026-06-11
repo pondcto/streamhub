@@ -19,7 +19,6 @@ class Settings(BaseSettings):
     dstv_crm_id: str = "afl"
     dstv_account_id: str = "afl"
     dstv_client_ip: str = ""
-    dstv_proxy_url: str = ""
     # Spoofing X-Forwarded-For breaks DStv Connect JWT verification on catalog APIs.
     dstv_send_client_ip_headers: bool = False
 
