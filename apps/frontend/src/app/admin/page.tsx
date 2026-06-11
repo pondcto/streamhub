@@ -253,10 +253,8 @@ export default function AdminPage() {
             </p>
           )}
           <p className="mt-2 text-xs text-gray-500">
-            POST <span className="font-mono">/api/get-dstv-trackedsession/</span> for auth fields.
-            POST the <span className="font-mono">vod_sections/sports</span> JSON body to{" "}
-            <span className="font-mono">/api/get-dstv-catalog/</span> for the Sport tab (WAF blocks
-            server replay).
+            POST <span className="font-mono">/api/get-dstv-trackedsession/</span> updates these
+            fields automatically — no manual save required.
           </p>
         </div>
       )}
@@ -291,19 +289,6 @@ export default function AdminPage() {
             ) : (
               "Connect session expired — paste a fresh JWT and save again."
             )}
-          </p>
-        </div>
-      )}
-
-      {sessionInfo?.catalog_auth_issue && !sessionInfo.catalog_auth_ready && (
-        <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-950/20 px-4 py-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-amber-300/80">
-            Sport catalog blocked
-          </p>
-          <p className="mt-2 text-sm text-amber-100">{sessionInfo.catalog_auth_issue}</p>
-          <p className="mt-2 text-xs text-gray-500">
-            Capture auth from DevTools → Network → successful{" "}
-            <span className="font-mono">vod_sections/sports</span> (200 response).
           </p>
         </div>
       )}

@@ -28,7 +28,6 @@ export default function ContentCard({ item, onWatch, watchLoading = false }: Con
             alt={item.title}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             loading="lazy"
-            referrerPolicy="no-referrer"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-slate-800 text-slate-400">

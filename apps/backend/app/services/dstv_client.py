@@ -306,20 +306,12 @@ class DStvClient:
                     return response.json()
                 except ValueError as exc:
                     body_preview = redact_sensitive(response.text[:500])
-                    body_lower = response.text[:2000].lower()
                     logger.warning(
                         "DStv API invalid JSON %s %s: %s",
                         method,
                         path,
                         body_preview,
                     )
-                    if body_lower.lstrip().startswith("<!doctype") or "<html" in body_lower:
-                        raise DStvAPIError(
-                            "DStv returned an HTML page instead of catalog JSON "
-                            "(expired Connect JWT or WAF token).",
-                            status_code=401,
-                            detail=body_preview,
-                        ) from exc
                     raise DStvAPIError(
                         "DStv API returned invalid JSON",
                         status_code=502,
@@ -396,14 +388,14 @@ class DStvClient:
                 profile_header="x-profile-id",
                 waf_header="x-aws-waf-token",
                 include_sec_fetch=True,
-                send_cookie=True,
+                send_cookie=False,
             ),
             HeaderProfile(
                 include_platform_id=False,
                 profile_header="X-Profile-Id",
                 waf_header="X-Aws-Waf-Token",
                 include_sec_fetch=True,
-                send_cookie=True,
+                send_cookie=False,
             ),
         ]
         last_error: Optional[DStvAPIError] = None
@@ -414,7 +406,7 @@ class DStvClient:
                     path,
                     params=params,
                     user_access_token=bearer,
-                    cookie=cookie or "",
+                    cookie=cookie if header_profile.send_cookie else "",
                     header_profile=header_profile,
                 )
             except DStvAPIError as exc:

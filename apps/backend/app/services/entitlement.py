@@ -4,12 +4,7 @@ from typing import Optional
 
 from app.config import Settings, get_settings
 from app.models.playback import DrmConfig, PlaybackResponse, WidevineConfig
-from app.services.auth import (
-    get_connect_token_remaining_seconds,
-    get_irdeto_session,
-    get_irdeto_session_for_content,
-    parse_session_info,
-)
+from app.services.auth import get_irdeto_session, parse_session_info
 from app.services.dstv_client import DStvAPIError, DStvClient, is_expired
 from app.services.entitlement_response import parse_entitlement_response
 from app.services.normalizers import normalize_live_channels
@@ -114,8 +109,13 @@ class EntitlementService:
                 manifest_hint=manifest_hint,
             )
 
-            content_session = get_irdeto_session_for_content(content_id)
-            manual_session = content_session or get_irdeto_session()
+            manual_session = get_irdeto_session()
+            if manual_session and resolved_manifest:
+                return await self._build_playback_from_irdeto_session(
+                    content_id=content_id,
+                    manifest_url=resolved_manifest,
+                    ls_session=manual_session,
+                )
 
             if not user_access_token:
                 if manual_session and not resolved_manifest:
@@ -129,23 +129,6 @@ class EntitlementService:
                     "DStv user authorization required. Set SESSION in the environment file.",
                     status_code=403,
                     code="DSTV_AUTH_REQUIRED",
-                )
-
-            if get_connect_token_remaining_seconds() <= 0:
-                if manual_session and resolved_manifest:
-                    logger.info(
-                        "Connect JWT expired for %s — using saved Irdeto session.",
-                        content_id,
-                    )
-                    return await self._build_playback_from_irdeto_session(
-                        content_id=content_id,
-                        manifest_url=resolved_manifest,
-                        ls_session=manual_session,
-                    )
-                raise EntitlementError(
-                    "Connect JWT expired. Play the title on dstv.stream to capture a fresh session.",
-                    status_code=403,
-                    code="ENTITLEMENT_DENIED",
                 )
 
             try:

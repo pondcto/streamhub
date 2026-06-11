@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from app.models.catalog import CatalogCard, CatalogLink, CatalogRail
-from app.services.dstv_channel_logos import channel_logo_for_tag
 from app.models.live import LiveChannel
 from app.models.navigation import NavigationSection
 
@@ -967,7 +966,6 @@ def normalize_live_channels(data: Any) -> List[LiveChannel]:
             or _extract_image(current_event)
             or _extract_dstv_image_paths(item.get("channelLogoPathsWeb"))
             or _extract_dstv_image_paths(item.get("channelLogoPaths"))
-            or channel_logo_for_tag(str(channel_tag) if channel_tag else None)
         )
 
         channels.append(

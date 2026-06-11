@@ -5,7 +5,6 @@ from fastapi import APIRouter, HTTPException, status
 from app.models.auth import SessionInfo
 from app.models.tracked_session import TrackedSessionRequest
 from app.services.auth import apply_tracked_session
-from app.services.entitlement_ingest import ingest_entitlement_response
 from app.services.cache import metadata_cache
 
 logger = logging.getLogger(__name__)
@@ -23,8 +22,6 @@ async def ingest_tracked_session(payload: TrackedSessionRequest) -> SessionInfo:
             waf_token=payload.waf_token,
             catalog_cookie=payload.catalog_cookie,
             irdeto_session_jwt=payload.irdeto_session_jwt,
-            content_id=payload.content_id,
-            entitlement_response=payload.entitlement_response,
             captured_at=payload.captured_at,
             source_url=payload.source_url,
             request_url=payload.request_url,
@@ -34,22 +31,6 @@ async def ingest_tracked_session(payload: TrackedSessionRequest) -> SessionInfo:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "INVALID_TRACKED_SESSION", "message": str(exc)},
         ) from exc
-
-    if payload.entitlement_response and (payload.content_id or payload.source_url):
-        from app.services.irdeto_content import extract_content_id_from_url
-
-        entitlement_content_id = (payload.content_id or "").strip() or extract_content_id_from_url(
-            payload.source_url
-        )
-        if entitlement_content_id:
-            try:
-                ingest_entitlement_response(
-                    entitlement_content_id,
-                    payload.entitlement_response,
-                    captured_at=payload.captured_at,
-                )
-            except ValueError as exc:
-                logger.warning("Tracked entitlement ingest skipped: %s", exc)
 
     metadata_cache.clear()
     logger.info(

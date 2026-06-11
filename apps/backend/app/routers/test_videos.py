@@ -17,7 +17,6 @@ from app.services.normalizers import (
     normalize_test_season_item,
     normalize_test_video_card,
 )
-from app.services.dstv_channel_logos import channel_logo_for_tag
 from app.services.test_items import TEST_ITEMS, TestItemSpec, find_test_item
 
 logger = logging.getLogger(__name__)
@@ -42,7 +41,7 @@ def _fallback_test_card(spec: TestItemSpec) -> TestVideoCard:
         title=spec.title or f"Test {spec.id}",
         type=spec.content_type,
         category=spec.category,
-        image=spec.image_hint or channel_logo_for_tag(spec.channel_tag or spec.id),
+        image=None,
         duration=None,
         description=spec.description,
         channel_tag=spec.channel_tag,
@@ -63,7 +62,7 @@ def _live_test_card(spec: TestItemSpec, channel: Optional[LiveChannel]) -> TestV
         category=spec.category,
         description=spec.description or channel.currentEvent,
         duration=channel.duration,
-        image=channel.image or spec.image_hint or channel_logo_for_tag(spec.channel_tag or spec.id),
+        image=channel.image,
         channel_tag=spec.channel_tag or channel.channelTag,
         manifest_hint=spec.manifest_hint,
         playable=True,
@@ -112,8 +111,6 @@ async def get_test_videos() -> TestVideosResponse:
                         normalized["description"] = spec.description
                     if spec.manifest_hint:
                         normalized["manifest_hint"] = spec.manifest_hint
-                    if not normalized.get("image") and spec.image_hint:
-                        normalized["image"] = spec.image_hint
                     items.append(TestVideoCard(**normalized))
                 except DStvAPIError as exc:
                     logger.warning(
@@ -174,17 +171,12 @@ async def generate_test_item_keys(
         )
 
     try:
-        entitlement_ids = [spec.id]
-        if spec.asset_id and spec.asset_id not in entitlement_ids:
-            entitlement_ids.insert(0, spec.asset_id)
-
         return await decryption_service.generate_keys(
             content_id=spec.id,
             content_type=spec.content_type,
             user_access_token=session.dstv_access_token,
             manifest_url=spec.manifest_hint,
             channel_tag=spec.channel_tag,
-            entitlement_content_ids=entitlement_ids,
         )
     except EntitlementError as exc:
         raise HTTPException(

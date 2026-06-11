@@ -128,8 +128,6 @@ export interface SessionInfo {
   device_type?: string;
   active: boolean;
   catalog_auth_configured?: boolean;
-  catalog_auth_ready?: boolean;
-  catalog_auth_issue?: string;
   profile_id_configured?: boolean;
   waf_token_configured?: boolean;
   irdeto_session_configured?: boolean;

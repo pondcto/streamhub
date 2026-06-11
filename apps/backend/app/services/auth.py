@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from app.models.auth import SessionData, SessionInfo
-from app.services.irdeto_content import extract_content_id_from_url
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +38,6 @@ _catalog_cookie: Optional[str] = None
 _playback_profile_id: Optional[str] = None
 _playback_waf_token: Optional[str] = None
 _irdeto_session: Optional[str] = None
-_irdeto_sessions_by_content: Dict[str, str] = {}
 _tracked_captured_at: Optional[datetime] = None
 _tracked_source_url: Optional[str] = None
 _tracked_request_url: Optional[str] = None
@@ -93,42 +91,6 @@ def _catalog_auth_configured() -> bool:
     return bool(_catalog_connect_token or _catalog_cookie)
 
 
-def get_connect_token_remaining_seconds() -> int:
-    token = _catalog_connect_token or _active_token
-    if not token:
-        return 0
-    try:
-        return parse_session_info(token).remaining_seconds
-    except ValueError:
-        return 0
-
-
-def catalog_auth_ready() -> tuple[bool, Optional[str]]:
-    """Return whether catalog API calls have the credentials DStv expects."""
-    missing: list[str] = []
-    if not (_playback_profile_id or "").strip():
-        missing.append("profile ID")
-    if not (_playback_waf_token or "").strip():
-        missing.append("WAF token")
-
-    has_bearer = bool((_catalog_connect_token or _active_token or "").strip())
-    if not has_bearer and not (_catalog_cookie or "").strip():
-        missing.append("Connect JWT")
-
-    if missing:
-        return False, f"Catalog auth incomplete — save {', '.join(missing)} on the Admin page."
-
-    remaining = get_connect_token_remaining_seconds()
-    if has_bearer and remaining <= 0:
-        return (
-            False,
-            "Connect JWT has expired (~15 minutes). Capture a fresh Authorization token from a "
-            "successful vod_sections/sports request on dstv.stream and save on Admin.",
-        )
-
-    return True, None
-
-
 def _persist_session_state() -> None:
     if not _has_saved_settings():
         SESSION_STORE_PATH.unlink(missing_ok=True)
@@ -140,7 +102,6 @@ def _persist_session_state() -> None:
         "profile_id": _playback_profile_id,
         "waf_token": _playback_waf_token,
         "irdeto_session": _irdeto_session,
-        "irdeto_sessions_by_content": _irdeto_sessions_by_content,
         "tracked_captured_at": _tracked_captured_at.isoformat() if _tracked_captured_at else None,
         "tracked_source_url": _tracked_source_url,
         "tracked_request_url": _tracked_request_url,
@@ -150,7 +111,7 @@ def _persist_session_state() -> None:
 
 def _apply_persisted_fields(payload: Dict[str, Any]) -> None:
     global _active_token, _configured_session, _catalog_connect_token, _catalog_cookie
-    global _playback_profile_id, _playback_waf_token, _irdeto_session, _irdeto_sessions_by_content
+    global _playback_profile_id, _playback_waf_token, _irdeto_session
     global _tracked_captured_at, _tracked_source_url, _tracked_request_url
 
     token = normalize_bearer_token(payload.get("token"))
@@ -191,14 +152,6 @@ def _apply_persisted_fields(payload: Dict[str, Any]) -> None:
     if payload.get("irdeto_session") is not None:
         value = str(payload.get("irdeto_session") or "").strip()
         _irdeto_session = value or None
-
-    stored_by_content = payload.get("irdeto_sessions_by_content")
-    if isinstance(stored_by_content, dict):
-        _irdeto_sessions_by_content = {
-            str(key).strip().upper(): str(value).strip()
-            for key, value in stored_by_content.items()
-            if str(key).strip() and str(value).strip()
-        }
 
     captured_raw = payload.get("tracked_captured_at")
     if captured_raw:
@@ -259,7 +212,7 @@ def set_session_token(
     irdeto_session: Optional[str] = None,
 ) -> SessionInfo:
     global _configured_session, _active_token, _catalog_connect_token, _catalog_cookie
-    global _playback_profile_id, _playback_waf_token, _irdeto_session, _irdeto_sessions_by_content
+    global _playback_profile_id, _playback_waf_token, _irdeto_session
 
     normalized_token = normalize_bearer_token(token)
     if normalized_token:
@@ -318,18 +271,12 @@ def set_session_token(
             if session_info.remaining_seconds <= 0:
                 raise ValueError("Irdeto session token has already expired.")
             _irdeto_session = value
-            tracked_content_id = extract_content_id_from_url(_tracked_source_url)
-            if tracked_content_id:
-                _store_irdeto_session_for_content(tracked_content_id, value)
         else:
             _irdeto_session = None
 
     info.catalog_auth_configured = _catalog_auth_configured()
     info.profile_id_configured = bool(_playback_profile_id)
     info.waf_token_configured = bool(_playback_waf_token)
-    ready, issue = catalog_auth_ready()
-    info.catalog_auth_ready = ready
-    info.catalog_auth_issue = issue
     info = _attach_saved_form_fields(info)
     _persist_session_state()
     logger.info("Session token updated (expires in %ss).", info.remaining_seconds)
@@ -365,58 +312,16 @@ def _irdeto_session_remaining_seconds() -> int:
         return 0
 
 
-def _valid_irdeto_jwt(jwt: Optional[str]) -> Optional[str]:
-    if not jwt:
-        return None
-    try:
-        if parse_session_info(jwt).remaining_seconds <= 0:
-            return None
-    except ValueError:
-        return None
-    return jwt
-
-
-def _store_irdeto_session_for_content(content_id: str, jwt: str) -> None:
-    global _irdeto_sessions_by_content
-    key = content_id.strip().upper()
-    if not key:
-        return
-    _irdeto_sessions_by_content[key] = jwt
-
-
-def store_irdeto_session_for_content(content_id: str, jwt: str) -> None:
-    valid = _valid_irdeto_jwt(jwt)
-    if not valid:
-        return
-    _store_irdeto_session_for_content(content_id, valid)
-    _persist_session_state()
-
-
-def get_irdeto_session_for_content(content_id: str) -> Optional[str]:
-    key = content_id.strip().upper()
-    if not key:
-        return None
-
-    direct = _valid_irdeto_jwt(_irdeto_sessions_by_content.get(key))
-    if direct:
-        return direct
-
-    asset_prefix = key.split("_", 1)[0]
-    for stored_key, jwt in _irdeto_sessions_by_content.items():
-        if stored_key == key or stored_key.startswith(f"{asset_prefix}_"):
-            valid = _valid_irdeto_jwt(jwt)
-            if valid:
-                return valid
-    return None
-
-
 def get_irdeto_session() -> Optional[str]:
-    return _valid_irdeto_jwt(_irdeto_session)
+    if not _irdeto_session:
+        return None
+    if _irdeto_session_remaining_seconds() <= 0:
+        return None
+    return _irdeto_session
 
 
 def has_catalog_auth() -> bool:
-    ready, _ = catalog_auth_ready()
-    return ready
+    return _catalog_auth_configured()
 
 
 def _ensure_session_data() -> Optional[SessionData]:
@@ -493,13 +398,12 @@ def apply_tracked_session(
     waf_token: Optional[str] = None,
     catalog_cookie: Optional[str] = None,
     irdeto_session_jwt: Optional[str] = None,
-    content_id: Optional[str] = None,
     captured_at: Optional[datetime] = None,
     source_url: Optional[str] = None,
     request_url: Optional[str] = None,
 ) -> SessionInfo:
     """Apply session fields posted by an external DStv browser tracker."""
-    global _tracked_captured_at, _tracked_source_url, _tracked_request_url, _irdeto_sessions_by_content
+    global _tracked_captured_at, _tracked_source_url, _tracked_request_url
 
     has_value = any(
         str(value or "").strip()
@@ -526,12 +430,6 @@ def apply_tracked_session(
         _tracked_source_url = source_url.strip() or None
     if request_url is not None:
         _tracked_request_url = request_url.strip() or None
-
-    tracked_content_id = (content_id or "").strip().upper() or extract_content_id_from_url(source_url)
-    if irdeto_session_jwt and tracked_content_id:
-        valid = _valid_irdeto_jwt(irdeto_session_jwt.strip())
-        if valid:
-            _store_irdeto_session_for_content(tracked_content_id, valid)
 
     token = normalize_bearer_token(authorization) if authorization is not None else None
     if authorization is not None and not token:
@@ -573,19 +471,11 @@ def get_session_info() -> Optional[SessionInfo]:
     info.catalog_auth_configured = _catalog_auth_configured()
     info.profile_id_configured = bool(_playback_profile_id)
     info.waf_token_configured = bool(_playback_waf_token)
-    ready, issue = catalog_auth_ready()
-    info.catalog_auth_ready = ready
-    info.catalog_auth_issue = issue
     return _attach_saved_form_fields(info)
 
 
 def initialize_session() -> None:
     """Load a saved UI session when present."""
-    from app.services.catalog_ingest import load_persisted_ingest
-    from app.services.entitlement_ingest import load_persisted_entitlement_ingest
-
-    load_persisted_ingest()
-    load_persisted_entitlement_ingest()
     if _load_persisted_session():
         info = get_session_info()
         if info:
