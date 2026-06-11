@@ -1,5 +1,6 @@
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
+from urllib.parse import quote
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -37,7 +38,32 @@ class Settings(BaseSettings):
     dstv_profile_id: str = ""
     dstv_waf_token: str = ""
 
+    dstv_proxy_type: str = "socks5"
+    dstv_proxy_host: str = ""
+    dstv_proxy_port: int = 0
+    dstv_proxy_username: str = ""
+    dstv_proxy_password: str = ""
+
     widevine_device_path: str = "../device/google_aosp_on_ia_emulator_14.0.0_b2d6507a_4464_l3.wvd"
+
+    @property
+    def dstv_proxy_url(self) -> Optional[str]:
+        host = self.dstv_proxy_host.strip()
+        if not host or self.dstv_proxy_port <= 0:
+            return None
+        scheme = (self.dstv_proxy_type or "socks5").strip().lower()
+        username = self.dstv_proxy_username.strip()
+        if username:
+            user = quote(username, safe="")
+            password = quote(self.dstv_proxy_password, safe="")
+            auth = f"{user}:{password}@"
+        else:
+            auth = ""
+        return f"{scheme}://{auth}{host}:{self.dstv_proxy_port}"
+
+    @property
+    def dstv_proxy_configured(self) -> bool:
+        return self.dstv_proxy_url is not None
 
     @property
     def cors_origins(self) -> List[str]:

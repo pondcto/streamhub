@@ -39,6 +39,18 @@ class DecryptionService:
 
         manual_session = get_irdeto_session()
 
+        # Prefer browser-captured Irdeto session — avoids WAF-blocked entitlement replay.
+        if manual_session and manifest_url:
+            logger.info(
+                "Using saved Irdeto session for content %s (skipping entitlement API)",
+                content_id,
+            )
+            return await self._generate_keys_with_manual_session(
+                content_id=content_id,
+                manifest_url=manifest_url,
+                ls_session=manual_session,
+            )
+
         if user_access_token:
             async with DStvClient(self.settings) as client:
                 try:

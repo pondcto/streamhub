@@ -7,6 +7,8 @@ import httpx
 import xmltodict
 
 from app.config import Settings
+from app.constants import BROWSER_USER_AGENT
+from app.utils.http_client import httpx_client_kwargs
 
 WIDEVINE_SYSTEM_ID = "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed"
 PLAYREADY_SYSTEM_ID = "urn:uuid:9a04f079-9840-4286-ab92-e65be0885f95"
@@ -117,18 +119,16 @@ async def fetch_manifest_drm_data(
 ) -> dict:
     headers = {
         "Accept": "*/*",
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/144.0.0.0 Safari/537.36"
-        ),
+        "User-Agent": BROWSER_USER_AGENT,
         "Origin": settings.dstv_api_base_url.rstrip("/"),
         "Referer": f"{settings.dstv_api_base_url.rstrip('/')}/",
     }
 
     owns_client = client is None
     if owns_client:
-        client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0))
+        client = httpx.AsyncClient(
+            **httpx_client_kwargs(settings, timeout=httpx.Timeout(30.0, connect=10.0))
+        )
 
     try:
         response = await client.get(mpd_url, headers=headers, follow_redirects=True)

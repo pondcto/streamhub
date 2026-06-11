@@ -9,6 +9,7 @@ from urllib.parse import urlencode, urljoin
 import httpx
 
 from app.config import Settings, get_settings
+from app.constants import BROWSER_USER_AGENT
 from app.services.auth import (
     get_catalog_connect_token,
     get_catalog_cookie,
@@ -17,6 +18,7 @@ from app.services.auth import (
     get_playback_waf_token,
     normalize_bearer_token,
 )
+from app.utils.http_client import httpx_client_kwargs
 from app.utils.redact import redact_sensitive
 
 logger = logging.getLogger(__name__)
@@ -24,13 +26,6 @@ logger = logging.getLogger(__name__)
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 MAX_RETRIES = 3
 RETRY_BACKOFF = 0.5
-
-BROWSER_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/144.0.0.0 Safari/537.36"
-)
-
 
 @dataclass(frozen=True)
 class HeaderProfile:
@@ -94,10 +89,20 @@ class DStvClient:
     async def start(self) -> None:
         if self._client is None:
             self._client = httpx.AsyncClient(
-                base_url=self.settings.dstv_api_base_url.rstrip("/"),
-                timeout=httpx.Timeout(30.0, connect=10.0),
-                follow_redirects=True,
+                **httpx_client_kwargs(
+                    self.settings,
+                    base_url=self.settings.dstv_api_base_url.rstrip("/"),
+                    timeout=httpx.Timeout(30.0, connect=10.0),
+                    follow_redirects=True,
+                )
             )
+            if self.settings.dstv_proxy_configured:
+                logger.info(
+                    "DStv API client using %s proxy at %s:%s",
+                    self.settings.dstv_proxy_type,
+                    self.settings.dstv_proxy_host,
+                    self.settings.dstv_proxy_port,
+                )
 
     async def close(self) -> None:
         if self._client is not None:
