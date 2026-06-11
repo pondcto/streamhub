@@ -124,7 +124,6 @@ def _season_detail_fixture(
             if card and not image:
                 image = pick_best_image(card.get("images") or []) or _extract_image(card)
 
-            video_id = spec.asset_id or spec.id
             return SeasonDetailResponse(
                 id=season_id,
                 title=str(title),
@@ -134,7 +133,7 @@ def _season_detail_fixture(
                 program_id=program_id,
                 videos=[
                     SeasonVideoCard(
-                        id=video_id,
+                        id=spec.id,
                         title=str(title),
                         synopsis=spec.description,
                         image=image,

@@ -5,7 +5,12 @@ from typing import List, Optional
 
 from app.config import Settings, get_settings
 from app.models.decryption import ContentKey, DecryptionKeysResponse
-from app.services.auth import get_irdeto_session, get_irdeto_session_for_content, parse_session_info
+from app.services.auth import (
+    get_connect_token_remaining_seconds,
+    get_irdeto_session,
+    get_irdeto_session_for_content,
+    parse_session_info,
+)
 from app.services.dstv_client import DStvAPIError, DStvClient, is_expired
 from app.services.entitlement import EntitlementError
 from app.services.entitlement_response import parse_entitlement_response
@@ -83,8 +88,11 @@ class DecryptionService:
     ) -> dict:
         content_session = get_irdeto_session_for_content(content_id)
         global_session = get_irdeto_session()
+        connect_jwt_active = bool(
+            user_access_token and get_connect_token_remaining_seconds() > 0
+        )
 
-        if user_access_token:
+        if connect_jwt_active:
             async with DStvClient(self.settings) as client:
                 last_error: Optional[DStvAPIError] = None
                 for entitlement_id in entitlement_content_ids:
@@ -136,22 +144,20 @@ class DecryptionService:
                         "source": "entitlement",
                     }
 
-                if content_session:
-                    logger.info(
-                        "Entitlement API unavailable for %s — using content-scoped Irdeto session.",
-                        content_id,
-                    )
-                    return self._manual_session_payload(
-                        content_id=content_id,
-                        manifest_url=manifest_url,
-                        ls_session=content_session,
-                        source="content_irdeto",
-                    )
+                irdeto_fallback = self._irdeto_session_fallback(
+                    content_id=content_id,
+                    manifest_url=manifest_url,
+                    content_session=content_session,
+                    global_session=global_session,
+                )
+                if irdeto_fallback is not None:
+                    return irdeto_fallback
 
                 if last_error and last_error.status_code in (401, 403):
                     raise EntitlementError(
-                        "Entitlement denied or Connect JWT expired. Play this title on dstv.stream "
-                        "so the browser extension can capture a fresh Irdeto session for it.",
+                        "Entitlement denied and no valid Irdeto session is saved for this title. "
+                        "Play it on dstv.stream so the extension can capture irdeto_session_jwt "
+                        "with content_id.",
                         status_code=last_error.status_code,
                         code="ENTITLEMENT_DENIED",
                     ) from last_error
@@ -161,6 +167,11 @@ class DecryptionService:
                         status_code=502,
                         code="ENTITLEMENT_API_ERROR",
                     ) from last_error
+        elif user_access_token:
+            logger.info(
+                "Connect JWT expired for %s — skipping entitlement API, using Irdeto session if available.",
+                content_id,
+            )
 
         if content_session:
             logger.info("Using content-scoped Irdeto session for %s.", content_id)
@@ -186,6 +197,38 @@ class DecryptionService:
             status_code=403,
             code="DSTV_AUTH_REQUIRED",
         )
+
+    def _irdeto_session_fallback(
+        self,
+        *,
+        content_id: str,
+        manifest_url: str,
+        content_session: Optional[str],
+        global_session: Optional[str],
+    ) -> Optional[dict]:
+        if content_session:
+            logger.info(
+                "Using content-scoped Irdeto session for %s.",
+                content_id,
+            )
+            return self._manual_session_payload(
+                content_id=content_id,
+                manifest_url=manifest_url,
+                ls_session=content_session,
+                source="content_irdeto",
+            )
+        if global_session:
+            logger.info(
+                "Using saved Irdeto session for %s (entitlement API unavailable).",
+                content_id,
+            )
+            return self._manual_session_payload(
+                content_id=content_id,
+                manifest_url=manifest_url,
+                ls_session=global_session,
+                source="global_irdeto",
+            )
+        return None
 
     @staticmethod
     def _manual_session_payload(
