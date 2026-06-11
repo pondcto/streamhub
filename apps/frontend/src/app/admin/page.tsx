@@ -12,11 +12,19 @@ import {
 import { notifySessionUpdated } from "@/lib/session-events";
 import type { ApiError, SessionInfo } from "@/lib/types";
 
+const SESSION_POLL_MS = 10_000;
+
 function formatMinutesSeconds(seconds: number): string {
   if (seconds <= 0) return "0m 00s";
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m}m ${String(s).padStart(2, "0")}s`;
+}
+
+function formatTrackedTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 function sessionToDraft(info: SessionInfo): Partial<AdminFormDraft> {
@@ -43,6 +51,7 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const skipPersistRef = useRef(false);
+  const lastTrackedAtRef = useRef<string | null>(null);
 
   const currentDraft = useCallback(
     (): AdminFormDraft => ({
@@ -79,8 +88,24 @@ export default function AdminPage() {
       setSessionInfo(info);
       if (info) {
         syncCountdowns(info);
-        const merged = mergeAdminFormDraft(sessionToDraft(info), loadAdminFormDraft());
-        applyDraft(merged);
+        const trackedAt = info.tracked_captured_at ?? null;
+        const trackedUpdated = Boolean(trackedAt && trackedAt !== lastTrackedAtRef.current);
+        if (trackedUpdated) {
+          lastTrackedAtRef.current = trackedAt;
+          const imported = {
+            token: info.connect_token ?? "",
+            profileId: info.profile_id ?? "",
+            wafToken: info.waf_token ?? "",
+            catalogCookie: info.catalog_cookie ?? "",
+            irdetoSession: info.irdeto_session ?? "",
+          };
+          applyDraft(imported);
+          saveAdminFormDraft(imported);
+          notifySessionUpdated();
+        } else {
+          const merged = mergeAdminFormDraft(sessionToDraft(info), loadAdminFormDraft());
+          applyDraft(merged);
+        }
       } else {
         setRemainingSeconds(null);
         setIrdetoRemainingSeconds(null);
@@ -100,6 +125,10 @@ export default function AdminPage() {
 
   useEffect(() => {
     refreshStatus();
+    const pollTimer = window.setInterval(() => {
+      refreshStatus();
+    }, SESSION_POLL_MS);
+    return () => window.clearInterval(pollTimer);
   }, [refreshStatus]);
 
   useEffect(() => {
@@ -204,6 +233,31 @@ export default function AdminPage() {
           ← Dashboard
         </Link>
       </div>
+
+      {sessionInfo?.tracked_captured_at && (
+        <div className="mb-6 rounded-lg border border-sky-500/30 bg-sky-950/20 px-4 py-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+            Last tracked session import
+          </p>
+          <p className="mt-1 text-sm text-sky-200">
+            {formatTrackedTime(sessionInfo.tracked_captured_at)}
+          </p>
+          {sessionInfo.tracked_source_url && (
+            <p className="mt-2 break-all text-xs text-gray-400">
+              <span className="text-gray-500">Source:</span> {sessionInfo.tracked_source_url}
+            </p>
+          )}
+          {sessionInfo.tracked_request_url && (
+            <p className="mt-1 break-all text-xs text-gray-400">
+              <span className="text-gray-500">Request:</span> {sessionInfo.tracked_request_url}
+            </p>
+          )}
+          <p className="mt-2 text-xs text-gray-500">
+            POST <span className="font-mono">/api/get-dstv-trackedsession/</span> updates these
+            fields automatically — no manual save required.
+          </p>
+        </div>
+      )}
 
       {sessionInfo && remainingSeconds !== null && (
         <div
@@ -369,8 +423,13 @@ export default function AdminPage() {
       <div className="mt-6 rounded-lg border border-white/10 bg-surface-raised/50 px-4 py-3 text-xs text-gray-500">
         <p className="font-medium text-gray-400">After saving</p>
         <ul className="mt-2 list-inside list-disc space-y-1">
+          <li>
+            External trackers can POST to{" "}
+            <span className="font-mono">/api/get-dstv-trackedsession/</span> to auto-fill session
+            fields.
+          </li>
           <li>Form values are kept after Save and when you switch tabs or pages.</li>
-          <li>Connect and Irdeto timers count down every second after saving.</li>
+          <li>Connect and Irdeto timers refresh every 10s and count down every second.</li>
           <li>All three are required for catalog: Connect JWT, Profile ID, and WAF token.</li>
           <li>Copy JWT, Profile ID, and WAF from the same successful 200 request.</li>
           <li>Pasting the catalog cookie auto-fills WAF if that field is empty.</li>

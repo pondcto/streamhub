@@ -7,7 +7,17 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.middleware.logging import RedactingAccessLogMiddleware
-from app.routers import auth_router, catalog, decryption, health, live, navigation, playback, test_videos
+from app.routers import (
+    auth_router,
+    catalog,
+    decryption,
+    health,
+    live,
+    navigation,
+    playback,
+    test_videos,
+    tracked_session,
+)
 from app.services.auth import initialize_session
 from app.services.entitlement import EntitlementError
 from app.utils.redact import redact_sensitive
@@ -53,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(playback.router)
     app.include_router(decryption.router)
     app.include_router(auth_router.router)
+    app.include_router(tracked_session.router)
 
     @app.exception_handler(EntitlementError)
     async def entitlement_error_handler(request: Request, exc: EntitlementError):

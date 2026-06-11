@@ -51,3 +51,6 @@ class SessionInfo(BaseModel):
     waf_token: Optional[str] = None
     catalog_cookie: Optional[str] = None
     irdeto_session: Optional[str] = None
+    tracked_captured_at: Optional[datetime] = None
+    tracked_source_url: Optional[str] = None
+    tracked_request_url: Optional[str] = None

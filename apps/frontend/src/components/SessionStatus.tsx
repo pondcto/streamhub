@@ -6,6 +6,8 @@ import { getSession } from "@/lib/api";
 import { SESSION_UPDATED_EVENT } from "@/lib/session-events";
 import type { SessionInfo } from "@/lib/types";
 
+const SESSION_POLL_MS = 15_000;
+
 function formatRemaining(seconds: number): string {
   if (seconds <= 0) return "expired";
   const m = Math.floor(seconds / 60);
@@ -40,8 +42,12 @@ export default function SessionStatus() {
   useEffect(() => {
     refresh();
     const onUpdate = () => refresh();
+    const pollTimer = window.setInterval(() => refresh(), SESSION_POLL_MS);
     window.addEventListener(SESSION_UPDATED_EVENT, onUpdate);
-    return () => window.removeEventListener(SESSION_UPDATED_EVENT, onUpdate);
+    return () => {
+      window.clearInterval(pollTimer);
+      window.removeEventListener(SESSION_UPDATED_EVENT, onUpdate);
+    };
   }, [refresh]);
 
   useEffect(() => {

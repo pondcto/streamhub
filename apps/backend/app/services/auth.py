@@ -38,6 +38,9 @@ _catalog_cookie: Optional[str] = None
 _playback_profile_id: Optional[str] = None
 _playback_waf_token: Optional[str] = None
 _irdeto_session: Optional[str] = None
+_tracked_captured_at: Optional[datetime] = None
+_tracked_source_url: Optional[str] = None
+_tracked_request_url: Optional[str] = None
 
 
 def _decode_jwt_payload(token: str) -> Dict[str, Any]:
@@ -99,6 +102,9 @@ def _persist_session_state() -> None:
         "profile_id": _playback_profile_id,
         "waf_token": _playback_waf_token,
         "irdeto_session": _irdeto_session,
+        "tracked_captured_at": _tracked_captured_at.isoformat() if _tracked_captured_at else None,
+        "tracked_source_url": _tracked_source_url,
+        "tracked_request_url": _tracked_request_url,
     }
     SESSION_STORE_PATH.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -106,6 +112,7 @@ def _persist_session_state() -> None:
 def _apply_persisted_fields(payload: Dict[str, Any]) -> None:
     global _active_token, _configured_session, _catalog_connect_token, _catalog_cookie
     global _playback_profile_id, _playback_waf_token, _irdeto_session
+    global _tracked_captured_at, _tracked_source_url, _tracked_request_url
 
     token = normalize_bearer_token(payload.get("token"))
     if token:
@@ -145,6 +152,21 @@ def _apply_persisted_fields(payload: Dict[str, Any]) -> None:
     if payload.get("irdeto_session") is not None:
         value = str(payload.get("irdeto_session") or "").strip()
         _irdeto_session = value or None
+
+    captured_raw = payload.get("tracked_captured_at")
+    if captured_raw:
+        try:
+            _tracked_captured_at = datetime.fromisoformat(str(captured_raw).replace("Z", "+00:00"))
+            if _tracked_captured_at.tzinfo is None:
+                _tracked_captured_at = _tracked_captured_at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    if payload.get("tracked_source_url") is not None:
+        value = str(payload.get("tracked_source_url") or "").strip()
+        _tracked_source_url = value or None
+    if payload.get("tracked_request_url") is not None:
+        value = str(payload.get("tracked_request_url") or "").strip()
+        _tracked_request_url = value or None
 
 
 def _load_persisted_session() -> bool:
@@ -344,6 +366,13 @@ def get_configured_session() -> Optional[SessionData]:
     return session
 
 
+def _attach_tracked_metadata(info: SessionInfo) -> SessionInfo:
+    info.tracked_captured_at = _tracked_captured_at
+    info.tracked_source_url = _tracked_source_url
+    info.tracked_request_url = _tracked_request_url
+    return info
+
+
 def _attach_saved_form_fields(info: SessionInfo) -> SessionInfo:
     info.connect_token = _active_token
     info.profile_id = _playback_profile_id
@@ -359,7 +388,61 @@ def _attach_saved_form_fields(info: SessionInfo) -> SessionInfo:
         except ValueError:
             info.irdeto_session_remaining_seconds = 0
             info.irdeto_session_configured = False
-    return info
+    return _attach_tracked_metadata(info)
+
+
+def apply_tracked_session(
+    *,
+    authorization: Optional[str] = None,
+    profile_id: Optional[str] = None,
+    waf_token: Optional[str] = None,
+    catalog_cookie: Optional[str] = None,
+    irdeto_session_jwt: Optional[str] = None,
+    captured_at: Optional[datetime] = None,
+    source_url: Optional[str] = None,
+    request_url: Optional[str] = None,
+) -> SessionInfo:
+    """Apply session fields posted by an external DStv browser tracker."""
+    global _tracked_captured_at, _tracked_source_url, _tracked_request_url
+
+    has_value = any(
+        str(value or "").strip()
+        for value in (
+            authorization,
+            profile_id,
+            waf_token,
+            catalog_cookie,
+            irdeto_session_jwt,
+        )
+    )
+    if not has_value:
+        raise ValueError("At least one session field is required.")
+
+    if captured_at is not None:
+        tracked_at = captured_at
+        if tracked_at.tzinfo is None:
+            tracked_at = tracked_at.replace(tzinfo=timezone.utc)
+        _tracked_captured_at = tracked_at
+    else:
+        _tracked_captured_at = datetime.now(timezone.utc)
+
+    if source_url is not None:
+        _tracked_source_url = source_url.strip() or None
+    if request_url is not None:
+        _tracked_request_url = request_url.strip() or None
+
+    token = normalize_bearer_token(authorization) if authorization is not None else None
+    if authorization is not None and not token:
+        token = None
+
+    return set_session_token(
+        token,
+        catalog_token=token,
+        profile_id=profile_id,
+        waf_token=waf_token,
+        catalog_cookie=catalog_cookie,
+        irdeto_session=irdeto_session_jwt,
+    )
 
 
 def _has_saved_settings() -> bool:

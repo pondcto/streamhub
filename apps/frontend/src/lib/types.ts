@@ -138,6 +138,9 @@ export interface SessionInfo {
   waf_token?: string;
   catalog_cookie?: string;
   irdeto_session?: string;
+  tracked_captured_at?: string;
+  tracked_source_url?: string;
+  tracked_request_url?: string;
 }
 
 export interface ApiError {
