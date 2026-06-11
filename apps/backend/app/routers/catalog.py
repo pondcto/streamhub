@@ -4,17 +4,30 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, status
 
 from app.config import get_settings
-from app.models.catalog import CatalogCard, CatalogPageResponse, CatalogRail, CatalogResponse, SeasonDetailResponse
+from app.models.catalog import (
+    CatalogCard,
+    CatalogPageResponse,
+    CatalogRail,
+    CatalogResponse,
+    SeasonDetailResponse,
+    SeasonVideoCard,
+)
 from app.services.auth import catalog_auth_ready, get_connect_token_remaining_seconds
-from app.services.catalog_ingest import get_ingested_catalog_meta, get_ingested_catalog_raw
+from app.services.catalog_ingest import (
+    get_ingested_catalog_meta,
+    get_ingested_catalog_raw,
+    get_ingested_season_raw,
+)
 from app.services.cache import metadata_cache
 from app.services.dstv_client import DStvAPIError, DStvClient
 from app.services.normalizers import (
+    _extract_image,
     live_channels_to_catalog_cards,
     normalize_catalog,
     normalize_catalog_page,
     normalize_live_channels,
     normalize_season_detail,
+    pick_best_image,
 )
 from app.fixtures.sport_page import load_sport_page_fixture
 from app.services.test_items import TEST_ITEMS
@@ -79,6 +92,74 @@ def _sport_page_from_fixture(notice: str | None = None) -> CatalogPageResponse:
         source="fixture",
         notice=notice or FIXTURE_FALLBACK_NOTICE,
     )
+
+
+def _find_sport_program_card(season_id: str) -> dict | None:
+    raw = load_sport_page_fixture()
+    for section in raw.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        for item in section.get("items") or []:
+            if isinstance(item, dict) and str(item.get("id") or "") == season_id:
+                return item
+    return None
+
+
+def _season_detail_fixture(
+    stack_id: str,
+    program_id: str,
+    season_id: str,
+) -> SeasonDetailResponse | None:
+    for spec in TEST_ITEMS:
+        if (
+            spec.content_type == "streaming"
+            and spec.season_id == season_id
+            and spec.stack_id == stack_id
+            and spec.program_id == program_id
+            and spec.manifest_hint
+        ):
+            card = _find_sport_program_card(season_id)
+            title = spec.title or (card or {}).get("title") or "Sport highlight"
+            image = spec.image_hint
+            if card and not image:
+                image = pick_best_image(card.get("images") or []) or _extract_image(card)
+
+            video_id = spec.asset_id or spec.id
+            return SeasonDetailResponse(
+                id=season_id,
+                title=str(title),
+                synopsis=spec.description,
+                image=image,
+                stack_id=stack_id,
+                program_id=program_id,
+                videos=[
+                    SeasonVideoCard(
+                        id=video_id,
+                        title=str(title),
+                        synopsis=spec.description,
+                        image=image,
+                        manifest_hint=spec.manifest_hint,
+                        content_type="streaming",
+                    )
+                ],
+            )
+    return None
+
+
+def _season_detail_from_ingest(
+    stack_id: str,
+    program_id: str,
+    season_id: str,
+) -> SeasonDetailResponse | None:
+    raw = get_ingested_season_raw(stack_id, program_id, season_id)
+    if raw is None:
+        return None
+    normalized = normalize_season_detail(raw)
+    if not normalized.get("videos"):
+        return None
+    normalized["stack_id"] = stack_id
+    normalized["program_id"] = program_id
+    return SeasonDetailResponse(**normalized)
 
 
 def _sport_page_from_ingest() -> CatalogPageResponse | None:
@@ -375,26 +456,44 @@ async def get_season_detail(
     program_id: str,
     season_id: str,
 ) -> SeasonDetailResponse:
-    settings = get_settings()
-    async with DStvClient(settings) as client:
-        auth_ready, auth_issue = catalog_auth_ready()
-        if not auth_ready:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "code": "DSTV_AUTH_REQUIRED",
-                    "message": auth_issue or "Catalog auth required on Admin page.",
-                },
-            )
-        try:
-            meta = await client.get_season_catalogue(stack_id, program_id, season_id)
-        except DStvAPIError as exc:
-            raise HTTPException(
-                status_code=exc.status_code,
-                detail={"code": "CATALOG_ERROR", "message": "Failed to load season detail."},
-            ) from exc
+    ingested = _season_detail_from_ingest(stack_id, program_id, season_id)
+    if ingested is not None:
+        return ingested
 
-    normalized = normalize_season_detail(meta)
-    normalized["stack_id"] = stack_id
-    normalized["program_id"] = program_id
-    return SeasonDetailResponse(**normalized)
+    settings = get_settings()
+    auth_ready, auth_issue = catalog_auth_ready()
+
+    if auth_ready:
+        async with DStvClient(settings) as client:
+            try:
+                meta = await client.get_season_catalogue(stack_id, program_id, season_id)
+            except DStvAPIError as exc:
+                logger.warning(
+                    "Season fetch failed for %s/%s/%s: %s",
+                    stack_id,
+                    program_id,
+                    season_id,
+                    exc.detail or str(exc),
+                )
+            else:
+                normalized = normalize_season_detail(meta)
+                if normalized.get("videos"):
+                    normalized["stack_id"] = stack_id
+                    normalized["program_id"] = program_id
+                    return SeasonDetailResponse(**normalized)
+
+    fixture = _season_detail_fixture(stack_id, program_id, season_id)
+    if fixture is not None:
+        return fixture
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "CATALOG_WAF_BLOCKED",
+            "message": (
+                auth_issue
+                or CATALOG_WAF_BLOCKED_NOTICE
+                + " POST the season JSON to /api/get-dstv-catalog/season for this title."
+            ),
+        },
+    )

@@ -59,6 +59,41 @@ def load_persisted_ingest() -> None:
         logger.info("Restored %d ingested catalog section(s).", len(_ingested))
 
 
+def season_ingest_key(stack_id: str, program_id: str, season_id: str) -> str:
+    return f"season:{stack_id.strip()}:{program_id.strip()}:{season_id.strip()}"
+
+
+def ingest_season_detail(
+    stack_id: str,
+    program_id: str,
+    season_id: str,
+    response_body: Dict[str, Any],
+    *,
+    captured_at: Optional[datetime] = None,
+    request_url: Optional[str] = None,
+) -> datetime:
+    key = season_ingest_key(stack_id, program_id, season_id)
+    return ingest_catalog_section(
+        key,
+        response_body,
+        captured_at=captured_at,
+        request_url=request_url,
+    )
+
+
+def get_ingested_season_raw(
+    stack_id: str,
+    program_id: str,
+    season_id: str,
+    *,
+    max_age_seconds: int = DEFAULT_MAX_AGE_SECONDS,
+) -> Optional[Dict[str, Any]]:
+    return get_ingested_catalog_raw(
+        season_ingest_key(stack_id, program_id, season_id),
+        max_age_seconds=max_age_seconds,
+    )
+
+
 def ingest_catalog_section(
     section: str,
     response_body: Dict[str, Any],
