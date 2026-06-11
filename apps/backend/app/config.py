@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # Spoofing X-Forwarded-For breaks DStv Connect JWT verification on catalog APIs.
     dstv_send_client_ip_headers: bool = False
 
-    backend_cors_origins: str = "http://localhost:3000"
+    backend_cors_origins: str = "http://localhost:3000,http://34.35.143.27:3000"
     backend_secret_key: str = "dev-secret-change-in-production"
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
