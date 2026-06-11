@@ -16,6 +16,7 @@ from app.services.normalizers import (
     normalize_live_channels,
     normalize_season_detail,
 )
+from app.fixtures.sport_page import load_sport_page_fixture
 from app.services.test_items import TEST_ITEMS
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,33 @@ def _catalog_failure_notice(exc: DStvAPIError | None, auth_issue: str | None) ->
     if exc:
         return str(exc) or CATALOG_AUTH_REJECTED_NOTICE
     return CATALOG_AUTH_REJECTED_NOTICE
+
+
+FIXTURE_FALLBACK_NOTICE = (
+    "Showing cached sport catalog layout with images. Live DStv API is unavailable from the "
+    "server — POST vod_sections/sports to /api/get-dstv-catalog/ for fresh data."
+)
+
+
+def _rails_missing_images(rails: list[CatalogRail]) -> bool:
+    if not rails:
+        return True
+    for rail in rails:
+        for item in rail.items:
+            if item.image:
+                return False
+    return True
+
+
+def _sport_page_from_fixture(notice: str | None = None) -> CatalogPageResponse:
+    raw = load_sport_page_fixture()
+    rails = normalize_catalog_page(raw, "sport")
+    return CatalogPageResponse(
+        section="sport",
+        rails=rails,
+        source="fixture",
+        notice=notice or FIXTURE_FALLBACK_NOTICE,
+    )
 
 
 def _sport_page_from_ingest() -> CatalogPageResponse | None:
@@ -187,6 +215,7 @@ async def _granular_curated_sport_rails(client: DStvClient) -> list[CatalogRail]
                         title=spec.title,
                         type="streaming",
                         description=spec.description,
+                        image=spec.image_hint,
                         category=spec.category,
                         manifest_hint=spec.manifest_hint,
                         stack_id=spec.stack_id,
@@ -265,12 +294,15 @@ async def _sport_combined_fallback(
                 )
             )
 
-    return CatalogPageResponse(
+    response = CatalogPageResponse(
         section="sport",
         rails=rails,
         source="live_fallback",
         notice=notice or live_response.notice,
     )
+    if _rails_missing_images(rails):
+        return _sport_page_from_fixture(notice=response.notice)
+    return response
 
 
 async def _live_fallback_rails(client: DStvClient, section: str, notice: str | None = None) -> CatalogPageResponse:
@@ -283,12 +315,15 @@ async def _live_fallback_rails(client: DStvClient, section: str, notice: str | N
             rails.append(
                 CatalogRail(id="live-channels", title="Live Channels", layout="landscape", items=cards[1:25])
             )
-    return CatalogPageResponse(
+    page = CatalogPageResponse(
         section=section,
         rails=rails,
         source="live_fallback",
         notice=notice or response.notice,
     )
+    if section == "sport" and _rails_missing_images(rails):
+        return _sport_page_from_fixture(notice=page.notice)
+    return page
 
 
 @router.get("/catalog/sport/page", response_model=CatalogPageResponse)
@@ -305,6 +340,8 @@ async def get_sport_page() -> CatalogPageResponse:
         if not auth_ready:
             notice = auth_issue or LIVE_FALLBACK_NOTICE
             response = await _live_fallback_rails(client, section, notice=notice)
+            if _rails_missing_images(response.rails):
+                return _sport_page_from_fixture(notice=response.notice or notice)
             return response
 
         cache_key = "catalog:page:sport"

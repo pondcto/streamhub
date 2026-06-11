@@ -18,6 +18,8 @@ class TestItemSpec:
     manifest_hint: Optional[str] = None
     title: Optional[str] = None
     description: Optional[str] = None
+    # Public DStv CDN poster when server-side metadata fetch is WAF-blocked.
+    image_hint: Optional[str] = None
     category: str = "Sport"
 
 
@@ -38,6 +40,7 @@ TEST_ITEMS: tuple[TestItemSpec, ...] = (
         manifest_hint="USL04/FHD/FHD.isml/.mpd",
         title="SuperSport FHD",
         description="Live sport linear channel (576p mobile filter).",
+        image_hint="https://cdn.dstv.com/dstvcms/2020/09/01/SS_Logo_Rugby_4-3_001_xlrg.png",
     ),
     TestItemSpec(
         id="SS127028_SOC060626WCFBELVTUNHD10_SUN",
@@ -53,6 +56,10 @@ TEST_ITEMS: tuple[TestItemSpec, ...] = (
         ),
         title="Belgium v Tunisia",
         description="FIFA World Cup friendly highlight — Matchday 3, King Baudouin Stadium Brussels.",
+        image_hint=(
+            "https://images.dstv.stream/images/vod/2026/06/05/"
+            "E36B_STK06944_LPS.jpg?presentation=small_16x9"
+        ),
     ),
     TestItemSpec(
         id="MSH",
@@ -60,5 +67,9 @@ TEST_ITEMS: tuple[TestItemSpec, ...] = (
         channel_tag="MSH",
         title="SuperSport Football",
         description="Live football and sport coverage.",
+        image_hint=(
+            "https://images.dstv.stream/images/content/2025/09/11/"
+            "16x9_Genre_Sport_Football_pre_thumb.jpg"
+        ),
     ),
 )

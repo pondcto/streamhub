@@ -41,7 +41,7 @@ def _fallback_test_card(spec: TestItemSpec) -> TestVideoCard:
         title=spec.title or f"Test {spec.id}",
         type=spec.content_type,
         category=spec.category,
-        image=None,
+        image=spec.image_hint,
         duration=None,
         description=spec.description,
         channel_tag=spec.channel_tag,
@@ -62,7 +62,7 @@ def _live_test_card(spec: TestItemSpec, channel: Optional[LiveChannel]) -> TestV
         category=spec.category,
         description=spec.description or channel.currentEvent,
         duration=channel.duration,
-        image=channel.image,
+        image=channel.image or spec.image_hint,
         channel_tag=spec.channel_tag or channel.channelTag,
         manifest_hint=spec.manifest_hint,
         playable=True,
@@ -111,6 +111,8 @@ async def get_test_videos() -> TestVideosResponse:
                         normalized["description"] = spec.description
                     if spec.manifest_hint:
                         normalized["manifest_hint"] = spec.manifest_hint
+                    if not normalized.get("image") and spec.image_hint:
+                        normalized["image"] = spec.image_hint
                     items.append(TestVideoCard(**normalized))
                 except DStvAPIError as exc:
                     logger.warning(

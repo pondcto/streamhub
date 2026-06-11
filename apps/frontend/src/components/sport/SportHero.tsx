@@ -64,6 +64,7 @@ export default function SportHero({ item, detailHref, onWatchStream }: SportHero
               src={item.image}
               alt={item.title}
               className="max-h-52 w-full rounded-xl object-contain md:max-h-64"
+              referrerPolicy="no-referrer"
             />
           ) : (
             <div className="flex h-40 w-full items-center justify-center rounded-xl bg-white/5 text-gray-500">
