@@ -77,9 +77,16 @@ export default function AdminPage() {
     try {
       const info = await getSession();
       setSessionInfo(info);
-      syncCountdowns(info);
-      const merged = mergeAdminFormDraft(sessionToDraft(info), loadAdminFormDraft());
-      applyDraft(merged);
+      if (info) {
+        syncCountdowns(info);
+        const merged = mergeAdminFormDraft(sessionToDraft(info), loadAdminFormDraft());
+        applyDraft(merged);
+      } else {
+        setRemainingSeconds(null);
+        setIrdetoRemainingSeconds(null);
+        const draft = loadAdminFormDraft();
+        if (draft) applyDraft(draft);
+      }
     } catch {
       setSessionInfo(null);
       setRemainingSeconds(null);

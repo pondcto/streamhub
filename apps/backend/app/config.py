@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     dstv_profile_id: str = ""
     dstv_waf_token: str = ""
 
-    widevine_device_path: str = "../../../device/google_aosp_on_ia_emulator_14.0.0_b2d6507a_4464_l3.wvd"
+    widevine_device_path: str = "../device/google_aosp_on_ia_emulator_14.0.0_b2d6507a_4464_l3.wvd"
 
     @property
     def cors_origins(self) -> List[str]:

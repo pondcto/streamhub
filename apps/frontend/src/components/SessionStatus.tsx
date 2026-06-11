@@ -22,12 +22,14 @@ export default function SessionStatus() {
     try {
       const session = await getSession();
       setInfo(session);
-      setConnectSeconds(session.remaining_seconds > 0 ? session.remaining_seconds : 0);
-      setIrdetoSeconds(
-        session.irdeto_session_remaining_seconds > 0
-          ? session.irdeto_session_remaining_seconds
-          : 0
-      );
+      if (session) {
+        setConnectSeconds(session.remaining_seconds > 0 ? session.remaining_seconds : 0);
+        const irdetoRemaining = session.irdeto_session_remaining_seconds ?? 0;
+        setIrdetoSeconds(irdetoRemaining > 0 ? irdetoRemaining : 0);
+      } else {
+        setConnectSeconds(0);
+        setIrdetoSeconds(0);
+      }
     } catch {
       setInfo(null);
       setConnectSeconds(0);

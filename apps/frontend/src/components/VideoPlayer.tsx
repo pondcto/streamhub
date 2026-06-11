@@ -14,6 +14,10 @@ type PlayerError = {
   message: string;
 };
 
+type ShakaPlayerInstance = {
+  destroy: () => void | Promise<void>;
+};
+
 function mapShakaError(err: unknown): PlayerError {
   if (err && typeof err === "object" && "code" in err) {
     const code = Number((err as { code: number }).code);
@@ -51,7 +55,7 @@ function mapShakaError(err: unknown): PlayerError {
 
 export default function VideoPlayer({ playback, contentTitle }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const playerRef = useRef<import("shaka-player").Player | null>(null);
+  const playerRef = useRef<ShakaPlayerInstance | null>(null);
   const [error, setError] = useState<PlayerError | null>(null);
   const [loading, setLoading] = useState(true);
 
