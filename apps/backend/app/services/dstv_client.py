@@ -74,10 +74,6 @@ class DStvClient:
         "tvshows": "/api/dstv_now/pages/v2/vod_sections/tv_shows",
         "kids": "/api/dstv_now/pages/v2/vod_sections/kids",
     }
-    LIVE_CHANNELS_PATH = (
-        "/api/cs-mobile/v7/epg-service/channels/events"
-        ";genre=ALL;country={country};packageId={package_id};count=2"
-    )
     ENTITLEMENT_SESSION_PATH = "/api/vod-auth/entitlement/session"
     VOD_VIDEO_META_PATH = "/api/dstv_now/vod/granular_catalogue/videos/{video_id}"
     VOD_SEASON_PATH = (
@@ -458,19 +454,6 @@ class DStvClient:
             user_access_token=self._catalog_bearer_token(),
             cookie=self._catalog_cookie(),
             header_profile=PAGES_HEADER_PROFILE,
-        )
-
-    async def get_live_channels(self) -> Any:
-        path = self.LIVE_CHANNELS_PATH.format(
-            country=self.settings.dstv_country_code,
-            package_id=self.settings.dstv_package_id,
-        )
-        params = {"platformId": self.settings.dstv_platform_id}
-        return await self._request(
-            "GET",
-            path,
-            params=params,
-            user_access_token=self._playback_token(),
         )
 
     async def get_epg_channel(self, channel_id: str) -> Any:

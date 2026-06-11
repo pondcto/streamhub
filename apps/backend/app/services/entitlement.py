@@ -6,8 +6,6 @@ from app.config import Settings, get_settings
 from app.models.playback import DrmConfig, PlaybackResponse, WidevineConfig
 from app.services.auth import get_irdeto_session, parse_session_info
 from app.services.dstv_client import DStvAPIError, DStvClient, is_expired
-from app.services.entitlement_response import parse_entitlement_response
-from app.services.normalizers import normalize_live_channels
 
 logger = logging.getLogger(__name__)
 
@@ -41,24 +39,7 @@ class EntitlementService:
         channel_tag: Optional[str],
         manifest_hint: Optional[str],
     ) -> Optional[str]:
-        if manifest_hint:
-            return manifest_hint
-        if content_type != "live" or not channel_tag:
-            return None
-
-        try:
-            raw = await client.get_live_channels()
-            channels = normalize_live_channels(raw)
-        except DStvAPIError:
-            return None
-
-        tag = channel_tag.strip().upper()
-        for channel in channels:
-            channel_tag_value = (channel.channelTag or "").upper()
-            channel_id_value = (channel.channelId or "").upper()
-            if tag in {channel_tag_value, channel_id_value} and channel.manifestHint:
-                return channel.manifestHint
-        return None
+        return manifest_hint
 
     async def _build_playback_from_irdeto_session(
         self,
@@ -70,7 +51,7 @@ class EntitlementService:
         expires_at = parse_session_info(ls_session).expires_at or datetime.now(timezone.utc)
         if is_expired(expires_at):
             raise EntitlementError(
-                "Irdeto session already expired. Paste a fresh session JWT on the admin page.",
+                "Irdeto session already expired. Import a fresh session via the tracked session endpoint.",
                 status_code=403,
                 code="SESSION_EXPIRED",
             )
@@ -120,8 +101,7 @@ class EntitlementService:
             if not user_access_token:
                 if manual_session and not resolved_manifest:
                     raise EntitlementError(
-                        "Manifest URL is required for playback. Open the channel from the dashboard "
-                        "so StreamHub can resolve the live stream path, or add manifestHint to the watch URL.",
+                        "Manifest URL is required for playback. Add manifestHint to the watch URL.",
                         status_code=400,
                         code="MANIFEST_REQUIRED",
                     )

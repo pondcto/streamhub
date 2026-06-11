@@ -23,8 +23,10 @@ htmlcov/
 dist/
 build/
 
+
 # Runtime session state (JWTs, tokens — never commit)
 .streamhub_session.json
+.streamhub_test_keys.json
 
 # Frontend (Next.js)
 node_modules/

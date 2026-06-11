@@ -2,15 +2,7 @@
 
 import type { DashboardSection } from "@/lib/types";
 
-const TABS: { id: DashboardSection; label: string }[] = [
-  { id: "home", label: "Home" },
-  { id: "live", label: "Live TV" },
-  { id: "movies", label: "Movies" },
-  { id: "sport", label: "Sport" },
-  { id: "tvshows", label: "TV Shows" },
-  { id: "kids", label: "Kids" },
-  { id: "test", label: "Test" },
-];
+const TABS: { id: DashboardSection; label: string }[] = [{ id: "test", label: "Test" }];
 
 interface CategoryTabsProps {
   active: DashboardSection;

@@ -66,20 +66,6 @@ export interface CatalogResponse {
   notice?: string;
 }
 
-export interface LiveChannel {
-  id: string;
-  channelId?: string;
-  channelTag?: string;
-  manifestHint?: string;
-  title: string;
-  image?: string;
-  currentEvent?: string;
-  startTime?: string;
-  endTime?: string;
-  duration?: string;
-  category?: string;
-}
-
 export interface NavigationSection {
   id: string;
   title: string;
@@ -149,14 +135,7 @@ export interface ApiError {
   detail?: string;
 }
 
-export type DashboardSection =
-  | "home"
-  | "live"
-  | "movies"
-  | "sport"
-  | "tvshows"
-  | "kids"
-  | "test";
+export type DashboardSection = "test";
 
 export interface TestVideoCard {
   id: string;

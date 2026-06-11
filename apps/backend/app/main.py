@@ -12,7 +12,6 @@ from app.routers import (
     catalog,
     decryption,
     health,
-    live,
     navigation,
     playback,
     test_videos,
@@ -59,7 +58,6 @@ def create_app() -> FastAPI:
     app.include_router(navigation.router)
     app.include_router(catalog.router)
     app.include_router(test_videos.router)
-    app.include_router(live.router)
     app.include_router(playback.router)
     app.include_router(decryption.router)
     app.include_router(auth_router.router)

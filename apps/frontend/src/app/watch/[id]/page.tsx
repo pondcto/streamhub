@@ -94,13 +94,9 @@ function WatchContent({ contentId }: { contentId: string }) {
         error?.code === "DSTV_AUTH_REQUIRED" ||
         error?.code === "ENTITLEMENT_DENIED") && (
         <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
-          Configure auth on the{" "}
-          <Link href="/admin" className="underline hover:text-white">
-            admin page
-          </Link>{" "}
-          with a fresh Connect JWT, profile ID, WAF token, and catalog cookie. If entitlement
-          fails, paste the Irdeto session JWT from your browser&apos;s entitlement response —
-          playback can continue with that session after the Connect JWT expires.
+          Authorization is required for playback. Set <span className="font-mono">DSTV_CONNECT_TOKEN</span>{" "}
+          in the backend environment or import a session via{" "}
+          <span className="font-mono">/api/get-dstv-trackedsession/</span>.
         </div>
       )}
 

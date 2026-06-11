@@ -287,6 +287,15 @@ def get_playback_token() -> Optional[str]:
     return _active_token
 
 
+def get_effective_access_token() -> Optional[str]:
+    session = get_configured_session()
+    if session and session.dstv_access_token:
+        return session.dstv_access_token
+    from app.config import get_settings
+
+    return normalize_bearer_token(get_settings().dstv_connect_token) or _active_token
+
+
 def get_catalog_connect_token() -> Optional[str]:
     return _catalog_connect_token
 
@@ -475,11 +484,24 @@ def get_session_info() -> Optional[SessionInfo]:
 
 
 def initialize_session() -> None:
-    """Load a saved UI session when present."""
+    """Load a saved UI session or env token when present."""
     if _load_persisted_session():
         info = get_session_info()
         if info:
             logger.info("Restored saved session (expires in %ss).", info.remaining_seconds)
             return
-    if not _active_token:
-        logger.info("No session configured — enter a token in the UI.")
+
+    from app.config import get_settings
+
+    token = normalize_bearer_token(get_settings().dstv_connect_token)
+    if token:
+        try:
+            set_session_token(token)
+            logger.info("Initialized session from DSTV_CONNECT_TOKEN env.")
+            return
+        except ValueError as exc:
+            logger.warning("Invalid DSTV_CONNECT_TOKEN in env: %s", exc)
+
+    logger.info(
+        "No session configured — set DSTV_CONNECT_TOKEN or POST to /api/get-dstv-trackedsession/."
+    )

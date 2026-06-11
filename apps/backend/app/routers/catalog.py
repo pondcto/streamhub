@@ -8,10 +8,8 @@ from app.models.catalog import CatalogCard, CatalogPageResponse, CatalogRail, Ca
 from app.services.cache import metadata_cache
 from app.services.dstv_client import DStvAPIError, DStvClient
 from app.services.normalizers import (
-    live_channels_to_catalog_cards,
     normalize_catalog,
     normalize_catalog_page,
-    normalize_live_channels,
     normalize_season_detail,
 )
 from app.services.test_items import TEST_ITEMS
@@ -21,9 +19,8 @@ router = APIRouter(prefix="/api", tags=["catalog"])
 
 VALID_SECTIONS = {"movies", "sport", "tvshows", "kids", "home"}
 
-LIVE_FALLBACK_NOTICE = (
-    "Showing live channels for this section. Catalog auth is missing — save Connect JWT, "
-    "profile ID, and WAF token on the Admin page."
+AUTH_REQUIRED_NOTICE = (
+    "Catalog auth is missing — save Connect JWT, profile ID, and WAF token on the Admin page."
 )
 
 CATALOG_AUTH_FAILED_NOTICE = (
@@ -58,26 +55,8 @@ def _sport_fixture_response(notice: str | None = None) -> CatalogPageResponse | 
     )
 
 
-async def _live_fallback(client: DStvClient, section: str) -> CatalogResponse:
-    try:
-        raw = await client.get_live_channels()
-    except DStvAPIError as exc:
-        logger.warning("Live fallback failed for %s: %s", section, exc.detail or str(exc))
-        return CatalogResponse(section=section, items=[], source="live_fallback")
-
-    try:
-        channels = normalize_live_channels(raw)
-        items = live_channels_to_catalog_cards(channels, section)
-    except Exception as exc:
-        logger.warning("Live fallback normalization failed for %s: %s", section, exc)
-        return CatalogResponse(section=section, items=[], source="live_fallback")
-
-    return CatalogResponse(
-        section=section,
-        items=items,
-        source="live_fallback",
-        notice=LIVE_FALLBACK_NOTICE if items else None,
-    )
+def _empty_catalog(section: str, notice: str | None = None) -> CatalogResponse:
+    return CatalogResponse(section=section, items=[], source="catalog", notice=notice)
 
 
 @router.get("/catalog/{section}", response_model=CatalogResponse)
@@ -100,10 +79,10 @@ async def get_catalog(
                 return CatalogResponse(
                     section=section,
                     items=cached,
-                    source="live_fallback",
-                    notice=LIVE_FALLBACK_NOTICE if cached else None,
+                    source="catalog",
+                    notice=AUTH_REQUIRED_NOTICE if not cached else None,
                 )
-            response = await _live_fallback(client, section)
+            response = _empty_catalog(section, AUTH_REQUIRED_NOTICE)
             metadata_cache.set(cache_key, response.items, settings.cache_ttl_catalog)
             return response
 
@@ -121,15 +100,14 @@ async def get_catalog(
                     detail={"code": "NOT_FOUND", "message": f"Catalog section not found: {section}"},
                 ) from exc
             logger.warning("Catalog fetch failed for %s: %s", section, exc.detail or str(exc))
-            response = await _live_fallback(client, section)
-            if exc.status_code in (401, 403):
-                response.notice = CATALOG_AUTH_FAILED_NOTICE
+            notice = CATALOG_AUTH_FAILED_NOTICE if exc.status_code in (401, 403) else None
+            response = _empty_catalog(section, notice)
             metadata_cache.set(f"catalog:fallback:{section}", response.items, settings.cache_ttl_catalog)
             return response
 
         items = normalize_catalog(raw, section)
         if not items:
-            response = await _live_fallback(client, section)
+            response = _empty_catalog(section)
             metadata_cache.set(f"catalog:fallback:{section}", response.items, settings.cache_ttl_catalog)
             return response
 
@@ -207,61 +185,17 @@ async def _granular_curated_sport_rails(client: DStvClient) -> list[CatalogRail]
     return rails
 
 
-async def _sport_combined_fallback(
+async def _sport_granular_fallback(
     client: DStvClient,
     *,
     notice: str | None = None,
 ) -> CatalogPageResponse:
-    granular_rails = await _granular_curated_sport_rails(client)
-    live_response = await _live_fallback(client, "sport")
-    live_cards = live_response.items
-
-    rails: list[CatalogRail] = list(granular_rails)
-    if live_cards:
-        if not rails:
-            rails.append(CatalogRail(id="live-hero", title="Live Sport", layout="hero", items=live_cards[:1]))
-            if len(live_cards) > 1:
-                rails.append(
-                    CatalogRail(
-                        id="live-channels",
-                        title="Live Channels",
-                        layout="landscape",
-                        items=live_cards[1:25],
-                    )
-                )
-        else:
-            rails.append(
-                CatalogRail(
-                    id="live-channels",
-                    title="Live Sport Channels",
-                    layout="landscape",
-                    items=live_cards[:24],
-                )
-            )
-
+    rails = await _granular_curated_sport_rails(client)
     return CatalogPageResponse(
         section="sport",
         rails=rails,
-        source="live_fallback",
-        notice=notice or live_response.notice,
-    )
-
-
-async def _live_fallback_rails(client: DStvClient, section: str, notice: str | None = None) -> CatalogPageResponse:
-    response = await _live_fallback(client, section)
-    cards = response.items
-    rails: list[CatalogRail] = []
-    if cards:
-        rails.append(CatalogRail(id="live-hero", title="Live Sport", layout="hero", items=cards[:1]))
-        if len(cards) > 1:
-            rails.append(
-                CatalogRail(id="live-channels", title="Live Channels", layout="landscape", items=cards[1:25])
-            )
-    return CatalogPageResponse(
-        section=section,
-        rails=rails,
-        source="live_fallback",
-        notice=notice or response.notice,
+        source="catalog",
+        notice=notice,
     )
 
 
@@ -285,7 +219,7 @@ async def get_sport_page() -> CatalogPageResponse:
             if fixture:
                 metadata_cache.set(cache_key, fixture.rails, settings.cache_ttl_catalog)
                 return fixture
-            response = await _live_fallback_rails(client, section)
+            response = await _sport_granular_fallback(client, notice=AUTH_REQUIRED_NOTICE)
             metadata_cache.set("catalog:page:fallback:sport", response.rails, settings.cache_ttl_catalog)
             return response
 
@@ -298,12 +232,12 @@ async def get_sport_page() -> CatalogPageResponse:
             raw = await client.get_vod_section(section)
         except DStvAPIError as exc:
             logger.warning("Sport page fetch failed: %s", exc.detail or str(exc))
-            notice = CATALOG_AUTH_FAILED_NOTICE if exc.status_code in (401, 403) else LIVE_FALLBACK_NOTICE
+            notice = CATALOG_AUTH_FAILED_NOTICE if exc.status_code in (401, 403) else None
             fixture = _sport_fixture_response(notice=notice)
             if fixture:
                 metadata_cache.set("catalog:page:fixture:sport", fixture.rails, settings.cache_ttl_catalog)
                 return fixture
-            response = await _sport_combined_fallback(client, notice=notice)
+            response = await _sport_granular_fallback(client, notice=notice)
             metadata_cache.set("catalog:page:fallback:sport", response.rails, settings.cache_ttl_catalog)
             return response
 
@@ -313,7 +247,7 @@ async def get_sport_page() -> CatalogPageResponse:
             if fixture:
                 metadata_cache.set("catalog:page:fixture:sport", fixture.rails, settings.cache_ttl_catalog)
                 return fixture
-            response = await _sport_combined_fallback(client)
+            response = await _sport_granular_fallback(client)
             metadata_cache.set("catalog:page:fallback:sport", response.rails, settings.cache_ttl_catalog)
             return response
 

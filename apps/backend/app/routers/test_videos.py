@@ -1,38 +1,24 @@
 import logging
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
 from app.config import get_settings
 from app.dependencies import require_auth
-from app.models.auth import SessionData
 from app.models.decryption import DecryptionKeysResponse
-from app.models.live import LiveChannel
 from app.models.test_videos import TestVideoCard, TestVideosResponse
+from app.models.tracked_session import TestKeysStatusResponse
 from app.services.decryption import DecryptionService
 from app.services.dstv_client import DStvAPIError, DStvClient
 from app.services.entitlement import EntitlementError
-from app.services.normalizers import (
-    normalize_live_channels,
-    normalize_test_season_item,
-    normalize_test_video_card,
-)
+from app.services.normalizers import normalize_test_season_item, normalize_test_video_card
+from app.services.stored_test_keys import get_stored_keys, get_store_updated_at, list_all_test_key_statuses
+from app.services.auth import get_session_info
 from app.services.test_items import TEST_ITEMS, TestItemSpec, find_test_item
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/test", tags=["test"])
 decryption_service = DecryptionService()
-
-
-def _find_live_channel(channels: list[LiveChannel], channel_tag: str) -> Optional[LiveChannel]:
-    tag = channel_tag.strip().upper()
-    for channel in channels:
-        if (channel.channelTag or "").upper() == tag:
-            return channel
-        if (channel.channelId or "").upper() == tag:
-            return channel
-    return None
 
 
 def _fallback_test_card(spec: TestItemSpec) -> TestVideoCard:
@@ -51,44 +37,15 @@ def _fallback_test_card(spec: TestItemSpec) -> TestVideoCard:
     )
 
 
-def _live_test_card(spec: TestItemSpec, channel: Optional[LiveChannel]) -> TestVideoCard:
-    if channel is None:
-        return _fallback_test_card(spec)
-
-    return TestVideoCard(
-        id=spec.id,
-        title=spec.title or channel.title,
-        type=spec.content_type,
-        category=spec.category,
-        description=spec.description or channel.currentEvent,
-        duration=channel.duration,
-        image=channel.image,
-        channel_tag=spec.channel_tag or channel.channelTag,
-        manifest_hint=spec.manifest_hint,
-        playable=True,
-        metadataStatus="ok",
-    )
-
-
 @router.get("/videos", response_model=TestVideosResponse)
 async def get_test_videos() -> TestVideosResponse:
     settings = get_settings()
     items: list[TestVideoCard] = []
 
     async with DStvClient(settings) as client:
-        live_channels: list[LiveChannel] = []
-        needs_live = any(spec.content_type == "live" for spec in TEST_ITEMS)
-        if needs_live:
-            try:
-                live_raw = await client.get_live_channels()
-                live_channels = normalize_live_channels(live_raw)
-            except DStvAPIError as exc:
-                logger.warning("Test tab live metadata failed (status %s)", exc.status_code)
-
         for spec in TEST_ITEMS:
             if spec.content_type == "live":
-                channel = _find_live_channel(live_channels, spec.channel_tag or spec.id)
-                items.append(_live_test_card(spec, channel))
+                items.append(_fallback_test_card(spec))
                 continue
 
             if spec.season_id and spec.stack_id and spec.program_id:
@@ -150,11 +107,17 @@ async def get_test_videos() -> TestVideosResponse:
     return TestVideosResponse(section="Test", count=len(items), items=items)
 
 
+@router.get("/videos/keys/status", response_model=TestKeysStatusResponse)
+async def get_test_keys_status() -> TestKeysStatusResponse:
+    return TestKeysStatusResponse(
+        session=get_session_info(),
+        keys_updated_at=get_store_updated_at(),
+        test_keys=list_all_test_key_statuses(),
+    )
+
+
 @router.post("/videos/{item_id}/keys", response_model=DecryptionKeysResponse)
-async def generate_test_item_keys(
-    item_id: str,
-    session: SessionData = Depends(require_auth),
-) -> DecryptionKeysResponse:
+async def generate_test_item_keys(item_id: str) -> DecryptionKeysResponse:
     spec = find_test_item(item_id)
     if spec is None:
         raise HTTPException(
@@ -170,6 +133,13 @@ async def generate_test_item_keys(
             },
         )
 
+    stored = get_stored_keys(item_id)
+    if stored is not None:
+        logger.info("Returning stored decryption keys for test item %s", item_id)
+        return stored
+
+    session = await require_auth()
+
     try:
         return await decryption_service.generate_keys(
             content_id=spec.id,
@@ -181,5 +151,11 @@ async def generate_test_item_keys(
     except EntitlementError as exc:
         raise HTTPException(
             status_code=exc.status_code,
-            detail={"code": exc.code, "message": str(exc)},
+            detail={
+                "code": exc.code,
+                "message": (
+                    f"{exc}. Wait for the session-track extension to refresh keys, "
+                    "or configure DSTV_CONNECT_TOKEN."
+                ),
+            },
         ) from exc

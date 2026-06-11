@@ -62,8 +62,7 @@ class DecryptionService:
                         )
                     if exc.status_code in (401, 403):
                         raise EntitlementError(
-                            "Entitlement denied or auth token expired. Paste a fresh Irdeto session JWT "
-                            "from your browser while playing this title on the admin page.",
+                            "Entitlement denied or auth token expired.",
                             status_code=exc.status_code,
                             code="ENTITLEMENT_DENIED",
                         ) from exc
@@ -125,7 +124,7 @@ class DecryptionService:
             )
 
         raise EntitlementError(
-            "DStv user authorization required. Save Connect JWT or Irdeto session on the admin page.",
+            "DStv user authorization required. Set DSTV_CONNECT_TOKEN or use the tracked session import.",
             status_code=403,
             code="DSTV_AUTH_REQUIRED",
         )
