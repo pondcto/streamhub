@@ -42,6 +42,19 @@ def generate_widevine_keys(
     pssh_b64: str,
     license_url: str,
 ) -> List[dict]:
+    return _generate_widevine_keys_with_url(
+        settings=settings,
+        pssh_b64=pssh_b64,
+        license_url=license_url,
+    )
+
+
+def _generate_widevine_keys_with_url(
+    *,
+    settings: Settings,
+    pssh_b64: str,
+    license_url: str,
+) -> List[dict]:
     if not pssh_b64:
         raise WidevineKeyError("Manifest did not contain a Widevine PSSH.", status_code=502)
 
@@ -61,6 +74,8 @@ def generate_widevine_keys(
                 license_url,
                 content=challenge,
                 headers={
+                    "Accept": "*/*",
+                    "Content-Type": "application/octet-stream",
                     "Origin": settings.dstv_api_base_url.rstrip("/"),
                     "Referer": f"{settings.dstv_api_base_url.rstrip('/')}/",
                     "User-Agent": (

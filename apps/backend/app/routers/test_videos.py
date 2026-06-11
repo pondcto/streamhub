@@ -173,12 +173,17 @@ async def generate_test_item_keys(
         )
 
     try:
+        entitlement_ids = [spec.id]
+        if spec.asset_id and spec.asset_id not in entitlement_ids:
+            entitlement_ids.insert(0, spec.asset_id)
+
         return await decryption_service.generate_keys(
             content_id=spec.id,
             content_type=spec.content_type,
             user_access_token=session.dstv_access_token,
             manifest_url=spec.manifest_hint,
             channel_tag=spec.channel_tag,
+            entitlement_content_ids=entitlement_ids,
         )
     except EntitlementError as exc:
         raise HTTPException(

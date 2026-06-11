@@ -22,6 +22,7 @@ async def ingest_tracked_session(payload: TrackedSessionRequest) -> SessionInfo:
             waf_token=payload.waf_token,
             catalog_cookie=payload.catalog_cookie,
             irdeto_session_jwt=payload.irdeto_session_jwt,
+            content_id=payload.content_id,
             captured_at=payload.captured_at,
             source_url=payload.source_url,
             request_url=payload.request_url,

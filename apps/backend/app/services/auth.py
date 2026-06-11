@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from app.models.auth import SessionData, SessionInfo
+from app.services.irdeto_content import extract_content_id_from_url
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ _catalog_cookie: Optional[str] = None
 _playback_profile_id: Optional[str] = None
 _playback_waf_token: Optional[str] = None
 _irdeto_session: Optional[str] = None
+_irdeto_sessions_by_content: Dict[str, str] = {}
 _tracked_captured_at: Optional[datetime] = None
 _tracked_source_url: Optional[str] = None
 _tracked_request_url: Optional[str] = None
@@ -138,6 +140,7 @@ def _persist_session_state() -> None:
         "profile_id": _playback_profile_id,
         "waf_token": _playback_waf_token,
         "irdeto_session": _irdeto_session,
+        "irdeto_sessions_by_content": _irdeto_sessions_by_content,
         "tracked_captured_at": _tracked_captured_at.isoformat() if _tracked_captured_at else None,
         "tracked_source_url": _tracked_source_url,
         "tracked_request_url": _tracked_request_url,
@@ -147,7 +150,7 @@ def _persist_session_state() -> None:
 
 def _apply_persisted_fields(payload: Dict[str, Any]) -> None:
     global _active_token, _configured_session, _catalog_connect_token, _catalog_cookie
-    global _playback_profile_id, _playback_waf_token, _irdeto_session
+    global _playback_profile_id, _playback_waf_token, _irdeto_session, _irdeto_sessions_by_content
     global _tracked_captured_at, _tracked_source_url, _tracked_request_url
 
     token = normalize_bearer_token(payload.get("token"))
@@ -188,6 +191,14 @@ def _apply_persisted_fields(payload: Dict[str, Any]) -> None:
     if payload.get("irdeto_session") is not None:
         value = str(payload.get("irdeto_session") or "").strip()
         _irdeto_session = value or None
+
+    stored_by_content = payload.get("irdeto_sessions_by_content")
+    if isinstance(stored_by_content, dict):
+        _irdeto_sessions_by_content = {
+            str(key).strip().upper(): str(value).strip()
+            for key, value in stored_by_content.items()
+            if str(key).strip() and str(value).strip()
+        }
 
     captured_raw = payload.get("tracked_captured_at")
     if captured_raw:
@@ -248,7 +259,7 @@ def set_session_token(
     irdeto_session: Optional[str] = None,
 ) -> SessionInfo:
     global _configured_session, _active_token, _catalog_connect_token, _catalog_cookie
-    global _playback_profile_id, _playback_waf_token, _irdeto_session
+    global _playback_profile_id, _playback_waf_token, _irdeto_session, _irdeto_sessions_by_content
 
     normalized_token = normalize_bearer_token(token)
     if normalized_token:
@@ -307,6 +318,9 @@ def set_session_token(
             if session_info.remaining_seconds <= 0:
                 raise ValueError("Irdeto session token has already expired.")
             _irdeto_session = value
+            tracked_content_id = extract_content_id_from_url(_tracked_source_url)
+            if tracked_content_id:
+                _store_irdeto_session_for_content(tracked_content_id, value)
         else:
             _irdeto_session = None
 
@@ -351,12 +365,53 @@ def _irdeto_session_remaining_seconds() -> int:
         return 0
 
 
+def _valid_irdeto_jwt(jwt: Optional[str]) -> Optional[str]:
+    if not jwt:
+        return None
+    try:
+        if parse_session_info(jwt).remaining_seconds <= 0:
+            return None
+    except ValueError:
+        return None
+    return jwt
+
+
+def _store_irdeto_session_for_content(content_id: str, jwt: str) -> None:
+    global _irdeto_sessions_by_content
+    key = content_id.strip().upper()
+    if not key:
+        return
+    _irdeto_sessions_by_content[key] = jwt
+
+
+def store_irdeto_session_for_content(content_id: str, jwt: str) -> None:
+    valid = _valid_irdeto_jwt(jwt)
+    if not valid:
+        return
+    _store_irdeto_session_for_content(content_id, valid)
+    _persist_session_state()
+
+
+def get_irdeto_session_for_content(content_id: str) -> Optional[str]:
+    key = content_id.strip().upper()
+    if not key:
+        return None
+
+    direct = _valid_irdeto_jwt(_irdeto_sessions_by_content.get(key))
+    if direct:
+        return direct
+
+    asset_prefix = key.split("_", 1)[0]
+    for stored_key, jwt in _irdeto_sessions_by_content.items():
+        if stored_key == key or stored_key.startswith(f"{asset_prefix}_"):
+            valid = _valid_irdeto_jwt(jwt)
+            if valid:
+                return valid
+    return None
+
+
 def get_irdeto_session() -> Optional[str]:
-    if not _irdeto_session:
-        return None
-    if _irdeto_session_remaining_seconds() <= 0:
-        return None
-    return _irdeto_session
+    return _valid_irdeto_jwt(_irdeto_session)
 
 
 def has_catalog_auth() -> bool:
@@ -438,12 +493,13 @@ def apply_tracked_session(
     waf_token: Optional[str] = None,
     catalog_cookie: Optional[str] = None,
     irdeto_session_jwt: Optional[str] = None,
+    content_id: Optional[str] = None,
     captured_at: Optional[datetime] = None,
     source_url: Optional[str] = None,
     request_url: Optional[str] = None,
 ) -> SessionInfo:
     """Apply session fields posted by an external DStv browser tracker."""
-    global _tracked_captured_at, _tracked_source_url, _tracked_request_url
+    global _tracked_captured_at, _tracked_source_url, _tracked_request_url, _irdeto_sessions_by_content
 
     has_value = any(
         str(value or "").strip()
@@ -470,6 +526,12 @@ def apply_tracked_session(
         _tracked_source_url = source_url.strip() or None
     if request_url is not None:
         _tracked_request_url = request_url.strip() or None
+
+    tracked_content_id = (content_id or "").strip().upper() or extract_content_id_from_url(source_url)
+    if irdeto_session_jwt and tracked_content_id:
+        valid = _valid_irdeto_jwt(irdeto_session_jwt.strip())
+        if valid:
+            _store_irdeto_session_for_content(tracked_content_id, valid)
 
     token = normalize_bearer_token(authorization) if authorization is not None else None
     if authorization is not None and not token:
