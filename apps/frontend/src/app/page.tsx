@@ -7,6 +7,7 @@ import DecryptionKeysPanel from "@/components/DecryptionKeysPanel";
 import ErrorBanner from "@/components/ErrorBanner";
 import LoadingGrid from "@/components/LoadingGrid";
 import SearchBar from "@/components/SearchBar";
+import VideoPlayer from "@/components/VideoPlayer";
 import { generateTestItemKeys, getTestVideos } from "@/lib/api";
 import { resolveTestVideos, TEST_VIDEOS } from "@/lib/test-items";
 import type { ApiError, ContentItem, DecryptionKeysResponse } from "@/lib/types";
@@ -121,9 +122,14 @@ function DashboardContent() {
 
       {keysResult && (
         <div className="mt-8 lg:max-w-4xl">
-          {keysTitle && (
-            <h2 className="mb-2 text-lg font-semibold text-white">{keysTitle}</h2>
-          )}
+          <VideoPlayer
+            playback={{
+              manifestUrl: keysResult.manifestUrl,
+              drm: { widevine: { licenseUrl: keysResult.licenseUrl } },
+              expiresAt: keysResult.sessionExpiresAt,
+            }}
+            contentTitle={keysTitle ?? undefined}
+          />
           <DecryptionKeysPanel data={keysResult} />
           <dl className="mt-4 grid gap-3 rounded-xl border border-white/10 bg-surface-raised p-4 text-xs text-gray-400">
             <div>

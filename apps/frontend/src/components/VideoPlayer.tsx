@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PlaybackConfig } from "@/lib/types";
+import { shouldProxyCdnUrl, toCdnProxyUrl, wrapManifestForPlayback } from "@/lib/cdn-proxy";
 import ErrorBanner from "./ErrorBanner";
 
 interface VideoPlayerProps {
@@ -14,8 +15,36 @@ type PlayerError = {
   message: string;
 };
 
+type ShakaNetworkingEngine = {
+  RequestType: {
+    LICENSE: number;
+  };
+  registerRequestFilter: (
+    filter: (type: number, request: { uris: string[]; allowCrossSiteCredentials?: boolean }) => void
+  ) => void;
+};
+
 type ShakaPlayerInstance = {
   destroy: () => void | Promise<void>;
+  getNetworkingEngine: () => ShakaNetworkingEngine;
+};
+
+type ShakaModule = {
+  default: {
+    polyfill: { installAll: () => void };
+    Player: {
+      isBrowserSupported: () => boolean;
+      new (): ShakaPlayerInstance & {
+        attach: (video: HTMLVideoElement) => Promise<void>;
+        configure: (config: object) => void;
+        addEventListener: (type: string, listener: (event: Event) => void) => void;
+        load: (uri: string) => Promise<void>;
+      };
+    };
+    net: {
+      NetworkingEngine: ShakaNetworkingEngine;
+    };
+  };
 };
 
 function mapShakaError(err: unknown): PlayerError {
@@ -53,6 +82,24 @@ function mapShakaError(err: unknown): PlayerError {
   };
 }
 
+function registerCdnProxyFilter(shaka: ShakaModule["default"], player: ShakaPlayerInstance) {
+  const net = player.getNetworkingEngine();
+  const licenseType = shaka.net.NetworkingEngine.RequestType.LICENSE;
+
+  net.registerRequestFilter((type, request) => {
+    if (type === licenseType) {
+      return;
+    }
+
+    request.uris = request.uris.map((uri) =>
+      shouldProxyCdnUrl(uri) ? toCdnProxyUrl(uri) : uri
+    );
+    if (request.uris.some((uri) => uri.includes("/api/playback/cdn?"))) {
+      request.allowCrossSiteCredentials = true;
+    }
+  });
+}
+
 export default function VideoPlayer({ playback, contentTitle }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<ShakaPlayerInstance | null>(null);
@@ -73,7 +120,9 @@ export default function VideoPlayer({ playback, contentTitle }: VideoPlayerProps
     }
 
     try {
-      const shakaModule = await import("shaka-player/dist/shaka-player.compiled.js");
+      const shakaModule = (await import(
+        "shaka-player/dist/shaka-player.compiled.js"
+      )) as ShakaModule;
       const shaka = shakaModule.default;
       shaka.polyfill.installAll();
 
@@ -98,19 +147,23 @@ export default function VideoPlayer({ playback, contentTitle }: VideoPlayerProps
         },
       });
 
+      registerCdnProxyFilter(shaka, player);
+
       player.addEventListener("error", (event: Event) => {
         const detail = (event as CustomEvent).detail;
         setError(mapShakaError(detail));
         setLoading(false);
       });
 
-      await player.load(playback.manifestUrl);
+      const manifestUrl = wrapManifestForPlayback(playback.manifestUrl);
+      await player.load(manifestUrl);
       setLoading(false);
     } catch (err) {
       const mapped = mapShakaError(err);
       if (mapped.message.toLowerCase().includes("403")) {
         mapped.code = "ENTITLEMENT_DENIED";
-        mapped.message = "Access denied (403). Entitlement may have been revoked.";
+        mapped.message =
+          "Access denied (403). The CDN token may have expired — click Watch again for a fresh session.";
       }
       setError(mapped);
       setLoading(false);

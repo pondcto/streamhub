@@ -4,8 +4,10 @@ from typing import Optional
 
 from app.config import Settings, get_settings
 from app.models.playback import DrmConfig, PlaybackResponse, WidevineConfig
-from app.services.auth import get_irdeto_session, parse_session_info
+from app.services.auth import get_irdeto_session, get_stored_live_manifest_url, parse_session_info
+from app.services.cdn_proxy import build_cdn_proxy_url, is_proxied_cdn_url
 from app.services.dstv_client import DStvAPIError, DStvClient, is_expired
+from app.services.live_manifest import is_signed_manifest_url
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +41,17 @@ class EntitlementService:
         channel_tag: Optional[str],
         manifest_hint: Optional[str],
     ) -> Optional[str]:
+        if channel_tag:
+            stored = get_stored_live_manifest_url(channel_tag)
+            if stored and is_signed_manifest_url(stored):
+                return stored
         return manifest_hint
+
+    @staticmethod
+    def _browser_manifest_url(manifest_url: str, api_base: Optional[str]) -> str:
+        if api_base and is_proxied_cdn_url(manifest_url):
+            return build_cdn_proxy_url(api_base, manifest_url)
+        return manifest_url
 
     async def _build_playback_from_irdeto_session(
         self,
@@ -47,6 +59,8 @@ class EntitlementService:
         content_id: str,
         manifest_url: str,
         ls_session: str,
+        channel_tag: Optional[str] = None,
+        api_base: Optional[str] = None,
     ) -> PlaybackResponse:
         expires_at = parse_session_info(ls_session).expires_at or datetime.now(timezone.utc)
         if is_expired(expires_at):
@@ -58,7 +72,12 @@ class EntitlementService:
 
         client = DStvClient(self.settings)
         manifest_url = self._normalize_manifest_url(manifest_url, client)
-        license_url = client.build_license_url(content_id=content_id, ls_session=ls_session)
+        license_content_id = channel_tag or content_id
+        license_url = client.build_license_url(
+            content_id=license_content_id,
+            ls_session=ls_session,
+        )
+        browser_manifest_url = self._browser_manifest_url(manifest_url, api_base)
 
         logger.info(
             "Playback authorized via saved Irdeto session for content %s, expires %s",
@@ -67,7 +86,7 @@ class EntitlementService:
         )
 
         return PlaybackResponse(
-            manifestUrl=manifest_url,
+            manifestUrl=browser_manifest_url,
             drm=DrmConfig(
                 widevine=WidevineConfig(licenseUrl=license_url),
             ),
@@ -81,6 +100,7 @@ class EntitlementService:
         user_access_token: Optional[str],
         channel_tag: Optional[str] = None,
         manifest_hint: Optional[str] = None,
+        api_base: Optional[str] = None,
     ) -> PlaybackResponse:
         async with DStvClient(self.settings) as client:
             resolved_manifest = await self._resolve_manifest_hint(
@@ -96,6 +116,8 @@ class EntitlementService:
                     content_id=content_id,
                     manifest_url=resolved_manifest,
                     ls_session=manual_session,
+                    channel_tag=channel_tag,
+                    api_base=api_base,
                 )
 
             if not user_access_token:
@@ -129,6 +151,8 @@ class EntitlementService:
                         content_id=content_id,
                         manifest_url=resolved_manifest,
                         ls_session=manual_session,
+                        channel_tag=channel_tag,
+                        api_base=api_base,
                     )
                 if exc.status_code in (401, 403):
                     raise EntitlementError(
@@ -156,6 +180,8 @@ class EntitlementService:
                     content_id=content_id,
                     manifest_url=resolved_manifest,
                     ls_session=manual_session,
+                    channel_tag=channel_tag,
+                    api_base=api_base,
                 )
             logger.warning(
                 "Entitlement response missing playback fields for content %s",
@@ -174,10 +200,12 @@ class EntitlementService:
                 code="SESSION_EXPIRED",
             )
 
+        license_content_id = channel_tag or drm_content_id
         license_url = DStvClient(self.settings).build_license_url(
-            content_id=drm_content_id,
+            content_id=license_content_id,
             ls_session=ls_session,
         )
+        browser_manifest_url = self._browser_manifest_url(manifest_url, api_base)
 
         logger.info(
             "Playback authorized for content %s, expires %s",
@@ -186,7 +214,7 @@ class EntitlementService:
         )
 
         return PlaybackResponse(
-            manifestUrl=manifest_url,
+            manifestUrl=browser_manifest_url,
             drm=DrmConfig(
                 widevine=WidevineConfig(licenseUrl=license_url),
             ),
