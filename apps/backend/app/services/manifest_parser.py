@@ -32,9 +32,14 @@ def asset_id_from_mpd_url(mpd_url: str) -> str:
     parts = [part for part in path.split("/") if part]
     for part in reversed(parts):
         if part.endswith(".mpd"):
-            return part[: -len(".mpd")]
-        if part.endswith(".ism"):
+            stem = part[: -len(".mpd")]
+            if stem:
+                return stem
             continue
+        if part.endswith(".isml"):
+            return part[: -len(".isml")]
+        if part.endswith(".ism"):
+            return part[: -len(".ism")]
         if re.match(r"^SS\d+_", part, re.IGNORECASE):
             return part
     raise ManifestParserError(f"Could not determine asset id from MPD URL: {mpd_url}", 400)

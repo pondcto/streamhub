@@ -305,7 +305,11 @@ class DecryptionService:
                 code="MANIFEST_ERROR",
             ) from exc
 
-        drm_content_id = manifest.get("drm_content_id") or drm_content_id
+        if channel_tag:
+            # Live linear channels license with the channel tag (e.g. TS2), not VOD *_ext ids.
+            drm_content_id = channel_tag
+        else:
+            drm_content_id = manifest.get("drm_content_id") or drm_content_id
         pssh = manifest.get("pssh") or ""
         kid = manifest.get("kid") or ""
 

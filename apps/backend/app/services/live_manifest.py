@@ -51,10 +51,13 @@ def channel_tag_from_signed_manifest_url(url: str) -> Optional[str]:
 
 def is_signed_manifest_url(url: str) -> bool:
     lowered = url.lower()
-    return any(
-        marker in lowered
-        for marker in ("hdntl=", "hdnea=", "__token__", "hmac=")
-    )
+    if any(marker in lowered for marker in ("hdntl=", "hdnea=", "__token__")):
+        return True
+    if "i-live-cache.akamaized.net" in lowered:
+        path = urlparse(url).path.lower()
+        return path.startswith("/hdntl=") or "/hdntl=" in path
+    # hdnts query-param URLs also contain hmac= but are not playable signed manifests.
+    return "hmac=" in lowered and "hdnts=" not in lowered
 
 
 def manifest_hint_from_player_url(player_url: Optional[str]) -> Optional[str]:
