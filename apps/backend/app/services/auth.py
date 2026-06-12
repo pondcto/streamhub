@@ -375,7 +375,9 @@ def capture_live_manifest_urls(
     from app.services.live_manifest import (
         channel_tag_from_signed_manifest_url,
         is_signed_manifest_url,
+        live_manifest_cdn_type,
     )
+    from app.services.test_items import find_test_item_by_channel_tag
 
     candidates: list[tuple[Optional[str], str]] = []
     if live_manifest_url:
@@ -390,9 +392,24 @@ def capture_live_manifest_urls(
         if not value or not is_signed_manifest_url(value):
             continue
         tag = (explicit_tag or channel_tag_from_signed_manifest_url(value) or "").strip().upper()
-        if tag:
-            set_stored_live_manifest_url(tag, value)
-            return
+        if not tag:
+            continue
+
+        cdn_type = live_manifest_cdn_type(value)
+        spec = find_test_item_by_channel_tag(tag)
+        if spec and spec.live_manifest_cdn and cdn_type and spec.live_manifest_cdn != cdn_type:
+            logger.warning(
+                "Ignoring %s live manifest for channel %s (expected %s CDN).",
+                cdn_type,
+                tag,
+                spec.live_manifest_cdn,
+            )
+            continue
+
+        set_stored_live_manifest_url(tag, value)
+        if cdn_type:
+            logger.info("Stored %s live manifest URL for channel %s.", cdn_type, tag)
+        return
 
 
 def get_catalog_connect_token() -> Optional[str]:

@@ -12,7 +12,8 @@ from app.services.auth import (
     parse_session_info,
     set_stored_live_manifest_url,
 )
-from app.services.live_manifest import is_signed_manifest_url
+from app.services.live_manifest import is_signed_manifest_url, live_manifest_cdn_type
+from app.services.test_items import find_test_item_by_channel_tag
 from app.services.dstv_client import DStvAPIError, DStvClient, is_expired
 from app.services.entitlement import EntitlementError
 from app.services.entitlement_response import parse_entitlement_response
@@ -67,9 +68,25 @@ class DecryptionService:
                 resolved_manifest_url,
             )
             if signed_manifest:
+                cdn_type = live_manifest_cdn_type(signed_manifest)
+                spec = find_test_item_by_channel_tag(channel_tag)
+                if (
+                    spec
+                    and spec.live_manifest_cdn
+                    and cdn_type
+                    and spec.live_manifest_cdn != cdn_type
+                ):
+                    raise EntitlementError(
+                        f"Stored manifest for {channel_tag} is {cdn_type} CDN but "
+                        f"{spec.live_manifest_cdn} is required. Play the channel on dstv.stream "
+                        "and capture a fresh live_manifest_url.",
+                        status_code=502,
+                        code="LIVE_MANIFEST_CDN_MISMATCH",
+                    )
                 logger.info(
-                    "Using browser-captured signed manifest for live channel %s",
+                    "Using browser-captured signed manifest for live channel %s (%s CDN)",
                     channel_tag,
+                    cdn_type or "unknown",
                 )
                 return await self._generate_keys_with_manual_session(
                     content_id=content_id,

@@ -18,7 +18,9 @@ from app.services.auth import (
 from app.services.live_manifest import (
     channel_tag_from_signed_manifest_url,
     is_signed_manifest_url,
+    live_manifest_cdn_type,
 )
+from app.services.test_items import find_test_item_by_channel_tag
 from app.services.cache import metadata_cache
 from app.services.stored_test_keys import (
     build_test_key_status,
@@ -66,6 +68,7 @@ def log_tracked_session_payload(
     inferred_tag = channel_tag_from_signed_manifest_url(manifest) if manifest else ""
     effective_tag = (payload.channel_tag or inferred_tag or stored_channel or "").strip().upper()
     stored_manifest = get_stored_live_manifest_url(effective_tag) if effective_tag else None
+    channel_spec = find_test_item_by_channel_tag(effective_tag) if effective_tag else None
 
     lines = [
         f"=== Session-Track payload ({phase}) ===",
@@ -75,6 +78,11 @@ def log_tracked_session_payload(
         f"  channel_tag:          {payload.channel_tag or '(not set)'}",
         f"  live_manifest_url:    {_preview(manifest, max_len=220)}",
         f"  live_manifest_signed: {is_signed_manifest_url(manifest) if manifest else False}",
+        f"  live_manifest_cdn:    {live_manifest_cdn_type(manifest) or '(none)'}",
+        (
+            "  expected_manifest_cdn:"
+            f" {channel_spec.live_manifest_cdn if channel_spec and channel_spec.live_manifest_cdn else '(unknown)'}"
+        ),
         f"  inferred_channel:     {inferred_tag or '(none)'}",
         f"  profile_id:           {payload.profile_id or '(not set)'}",
         (

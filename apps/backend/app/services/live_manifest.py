@@ -1,7 +1,9 @@
 import logging
 import re
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from urllib.parse import quote, urlencode, urlparse
+
+LiveManifestCdn = Literal["akamai", "gtm"]
 
 import httpx
 
@@ -49,13 +51,41 @@ def channel_tag_from_signed_manifest_url(url: str) -> Optional[str]:
     return None
 
 
+def is_akamai_hdntl_manifest_url(url: str) -> bool:
+    """Akamai live MPD with path-style hdntl token (e.g. TS2 on i-live-cache.akamaized.net)."""
+    lowered = url.lower()
+    if "i-live-cache.akamaized.net" not in lowered:
+        return False
+    path = urlparse(url).path.lower()
+    if not (path.startswith("/hdntl=") or "/hdntl=" in path):
+        return False
+    # Unsigned or query-param hdnts URLs are not the playable signed manifest.
+    return "hdnts=" not in lowered.split("?", 1)[-1]
+
+
+def is_gtm_token_manifest_url(url: str) -> bool:
+    """GTM live MPD with __token__ path prefix (e.g. 33B/CHD on i-live-gtm.dstv.com)."""
+    lowered = url.lower()
+    if "i-live-gtm.dstv.com" not in lowered:
+        return False
+    path = urlparse(url).path.lower()
+    return path.startswith("/__token__") or "/__token__" in path
+
+
+def live_manifest_cdn_type(url: str) -> Optional[LiveManifestCdn]:
+    if is_gtm_token_manifest_url(url):
+        return "gtm"
+    if is_akamai_hdntl_manifest_url(url):
+        return "akamai"
+    return None
+
+
 def is_signed_manifest_url(url: str) -> bool:
+    if live_manifest_cdn_type(url):
+        return True
     lowered = url.lower()
     if any(marker in lowered for marker in ("hdntl=", "hdnea=", "__token__")):
         return True
-    if "i-live-cache.akamaized.net" in lowered:
-        path = urlparse(url).path.lower()
-        return path.startswith("/hdntl=") or "/hdntl=" in path
     # hdnts query-param URLs also contain hmac= but are not playable signed manifests.
     return "hmac=" in lowered and "hdnts=" not in lowered
 
@@ -382,7 +412,7 @@ async def resolve_live_manifest_url(
     raise ValueError(
         f"Could not resolve signed live manifest for {channel_tag or manifest_path}. "
         "Play the channel on dstv.stream so the session tracker captures live_manifest_url "
-        "(the i-live-cache.akamaized.net hdntl MPD request)."
+        "(Akamai hdntl for channels like TS2, or GTM __token__ for channels like 33B/CHD)."
     )
 
 

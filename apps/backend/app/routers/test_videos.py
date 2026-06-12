@@ -150,10 +150,17 @@ async def generate_test_item_keys(item_id: str) -> DecryptionKeysResponse:
         )
     except EntitlementError as exc:
         extra = ""
-        if exc.code == "LIVE_MANIFEST_REQUIRED":
+        if exc.code in {"LIVE_MANIFEST_REQUIRED", "LIVE_MANIFEST_CDN_MISMATCH"}:
+            cdn_hint = (
+                "Akamai hdntl (TS2)"
+                if spec.live_manifest_cdn == "akamai"
+                else "GTM __token__ (33B/CHD)"
+                if spec.live_manifest_cdn == "gtm"
+                else "the correct signed manifest"
+            )
             extra = (
-                " Play TS2 on dstv.stream, reload extension v1.5+, and confirm the dashboard "
-                "shows a Live signed MPD URL before clicking Watch."
+                f" Play {spec.channel_tag or spec.id} on dstv.stream and capture {cdn_hint} "
+                "via the session tracker before clicking Watch."
             )
         elif spec.channel_tag:
             extra = (

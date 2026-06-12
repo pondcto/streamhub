@@ -2,6 +2,8 @@ import type { ContentItem, TestVideoCard } from "./types";
 
 export const TEST_VIDEO_IDS = {
   TS2_LIVE: "TS2",
+  CHANNEL_33B: "33B",
+  CHD_LIVE: "CHD",
   BELGIUM_TUNISIA: "SS127028_SOC060626WCFBELVTUNHD10_SUN",
 } as const;
 
@@ -11,10 +13,28 @@ export const TEST_VIDEOS: ContentItem[] = [
     id: TEST_VIDEO_IDS.TS2_LIVE,
     title: "TS2 Live",
     category: "Sport",
-    subtitle: "Live linear channel (576p mobile filter).",
+    subtitle: "Akamai hdntl manifest (i-live-cache.akamaized.net).",
     contentType: "streaming",
     channelTag: "TS2",
     manifestHint: "USL02/TS2/TS2.isml/.mpd",
+  },
+  {
+    id: TEST_VIDEO_IDS.CHANNEL_33B,
+    title: "33B Live",
+    category: "Sport",
+    subtitle: "GTM __token__ manifest (i-live-gtm.dstv.com, USL05).",
+    contentType: "streaming",
+    channelTag: "33B",
+    manifestHint: "USL05/33B/33B.isml/.mpd",
+  },
+  {
+    id: TEST_VIDEO_IDS.CHD_LIVE,
+    title: "CHD Live",
+    category: "Sport",
+    subtitle: "GTM __token__ manifest (i-live-gtm.dstv.com, USL06).",
+    contentType: "streaming",
+    channelTag: "CHD",
+    manifestHint: "USL06/CHD/CHD.isml/.mpd",
   },
   {
     id: TEST_VIDEO_IDS.BELGIUM_TUNISIA,
