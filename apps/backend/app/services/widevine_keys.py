@@ -7,8 +7,7 @@ from pywidevine.device import Device
 from pywidevine.pssh import PSSH
 
 from app.config import Settings
-from app.constants import BROWSER_USER_AGENT
-from app.utils.http_client import httpx_client_kwargs
+from app.utils.http_client import browser_request_headers, httpx_sync_client
 
 
 class WidevineKeyError(Exception):
@@ -55,21 +54,11 @@ def generate_widevine_keys(
     try:
         challenge = cdm.get_license_challenge(session_id, PSSH(pssh_b64))
 
-        with httpx.Client(
-            **httpx_client_kwargs(
-                settings,
-                timeout=httpx.Timeout(30.0, connect=10.0),
-                follow_redirects=True,
-            )
-        ) as client:
+        with httpx_sync_client(settings, log_label="license") as client:
             response = client.post(
                 license_url,
                 content=challenge,
-                headers={
-                    "Origin": settings.dstv_api_base_url.rstrip("/"),
-                    "Referer": f"{settings.dstv_api_base_url.rstrip('/')}/",
-                    "User-Agent": BROWSER_USER_AGENT,
-                },
+                headers=browser_request_headers(settings),
             )
 
         if response.status_code >= 400:

@@ -7,8 +7,7 @@ import httpx
 import xmltodict
 
 from app.config import Settings
-from app.constants import BROWSER_USER_AGENT
-from app.utils.http_client import httpx_client_kwargs
+from app.utils.http_client import browser_request_headers, httpx_async_client
 
 WIDEVINE_SYSTEM_ID = "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed"
 PLAYREADY_SYSTEM_ID = "urn:uuid:9a04f079-9840-4286-ab92-e65be0885f95"
@@ -117,21 +116,14 @@ async def fetch_manifest_drm_data(
     settings: Settings,
     client: Optional[httpx.AsyncClient] = None,
 ) -> dict:
-    headers = {
-        "Accept": "*/*",
-        "User-Agent": BROWSER_USER_AGENT,
-        "Origin": settings.dstv_api_base_url.rstrip("/"),
-        "Referer": f"{settings.dstv_api_base_url.rstrip('/')}/",
-    }
+    headers = browser_request_headers(settings)
 
     owns_client = client is None
     if owns_client:
-        client = httpx.AsyncClient(
-            **httpx_client_kwargs(settings, timeout=httpx.Timeout(30.0, connect=10.0))
-        )
+        client = httpx_async_client(settings, log_label="manifest")
 
     try:
-        response = await client.get(mpd_url, headers=headers, follow_redirects=True)
+        response = await client.get(mpd_url, headers=headers)
         if response.status_code >= 400:
             raise ManifestParserError(
                 f"Failed to fetch manifest ({response.status_code})",

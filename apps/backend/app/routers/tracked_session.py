@@ -79,6 +79,12 @@ async def ingest_tracked_session(payload: TrackedSessionRequest) -> TrackedSessi
     keys_updated_at = get_store_updated_at()
 
     ok_count = sum(1 for item in test_keys if item.status == "ok")
+    ts2_status = next((item for item in test_keys if item.item_id == "TS2"), None)
+    if ts2_status and ts2_status.status != "ok":
+        logger.warning(
+            "TS2 key refresh failed: %s (live_manifest_url required from session tracker)",
+            ts2_status.message or ts2_status.status,
+        )
     logger.info(
         "Tracked session applied (connect %ss, irdeto %ss). Test keys: %s/%s ok.",
         info.remaining_seconds,

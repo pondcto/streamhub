@@ -149,14 +149,21 @@ async def generate_test_item_keys(item_id: str) -> DecryptionKeysResponse:
             channel_tag=spec.channel_tag,
         )
     except EntitlementError as exc:
+        extra = ""
+        if exc.code == "LIVE_MANIFEST_REQUIRED":
+            extra = (
+                " Play TS2 on dstv.stream, reload extension v1.5+, and confirm the dashboard "
+                "shows a Live signed MPD URL before clicking Watch."
+            )
+        elif spec.channel_tag:
+            extra = (
+                " For live channels, play the stream on dstv.stream so the session tracker "
+                "captures live_manifest_url."
+            )
         raise HTTPException(
             status_code=exc.status_code,
             detail={
                 "code": exc.code,
-                "message": (
-                    f"{exc}. For live channels, play the stream on dstv.stream so the "
-                    "session tracker captures the signed MPD URL, refresh the Connect JWT "
-                    "(expires every ~15 min), or configure DSTV_CONNECT_TOKEN."
-                ),
+                "message": f"{exc}.{extra}",
             },
         ) from exc

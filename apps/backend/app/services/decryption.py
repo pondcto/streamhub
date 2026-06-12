@@ -8,9 +8,11 @@ from app.models.decryption import ContentKey, DecryptionKeysResponse
 from app.services.auth import (
     get_entitlement_access_token,
     get_irdeto_session,
+    get_stored_live_manifest_url,
     parse_session_info,
     set_stored_live_manifest_url,
 )
+from app.services.live_manifest import is_signed_manifest_url
 from app.services.dstv_client import DStvAPIError, DStvClient, is_expired
 from app.services.entitlement import EntitlementError
 from app.services.entitlement_response import parse_entitlement_response
@@ -26,6 +28,18 @@ class DecryptionService:
 
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self.settings = settings or get_settings()
+
+    @staticmethod
+    def _resolve_signed_live_manifest(
+        channel_tag: str,
+        manifest_url: str,
+    ) -> Optional[str]:
+        stored = get_stored_live_manifest_url(channel_tag)
+        if stored and is_signed_manifest_url(stored):
+            return stored
+        if manifest_url.startswith("http") and is_signed_manifest_url(manifest_url):
+            return manifest_url
+        return None
 
     async def generate_keys(
         self,
@@ -47,13 +61,31 @@ class DecryptionService:
         resolved_manifest_url = manifest_url
         entitlement_token = get_entitlement_access_token()
 
+        if channel_tag and manual_session:
+            signed_manifest = self._resolve_signed_live_manifest(
+                channel_tag,
+                resolved_manifest_url,
+            )
+            if signed_manifest:
+                logger.info(
+                    "Using browser-captured signed manifest for live channel %s",
+                    channel_tag,
+                )
+                return await self._generate_keys_with_manual_session(
+                    content_id=content_id,
+                    content_type=content_type,
+                    manifest_url=signed_manifest,
+                    ls_session=manual_session,
+                    channel_tag=channel_tag,
+                )
+
         if channel_tag and not manifest_url.startswith("http"):
             async with DStvClient(self.settings) as lookup_client:
                 epg_path = await lookup_client.find_live_channel_manifest_path(channel_tag)
                 if epg_path:
                     resolved_manifest_url = epg_path
 
-        # Prefer browser-captured Irdeto session for VOD highlights (live linear needs entitlement).
+        # Prefer browser-captured Irdeto session for VOD highlights.
         if manual_session and resolved_manifest_url and not channel_tag:
             logger.info(
                 "Using saved Irdeto session for content %s (skipping entitlement API)",
@@ -153,6 +185,13 @@ class DecryptionService:
                 )
 
         if manual_session:
+            if channel_tag:
+                raise EntitlementError(
+                    f"Live channel {channel_tag} requires a signed MPD URL from the session tracker. "
+                    "Play the channel on dstv.stream and ensure the extension sends live_manifest_url.",
+                    status_code=502,
+                    code="LIVE_MANIFEST_REQUIRED",
+                )
             logger.info("Using saved Irdeto session for content %s (no valid Connect JWT)", content_id)
             return await self._generate_keys_with_manual_session(
                 content_id=content_id,
@@ -187,19 +226,15 @@ class DecryptionService:
                 code="SESSION_EXPIRED",
             )
         if channel_tag:
-            async with DStvClient(self.settings) as client:
-                return await self._generate_keys_with_session(
-                    content_id=content_id,
-                    content_type=content_type,
-                    manifest_url=manifest_url,
-                    ls_session=ls_session,
-                    expires_at=expires_at,
-                    drm_content_id=channel_tag or content_id,
-                    streaming_filter=None,
-                    channel_tag=channel_tag,
-                    client=client,
-                    user_access_token=user_access_token,
+            signed_manifest = self._resolve_signed_live_manifest(channel_tag, manifest_url)
+            if not signed_manifest:
+                raise EntitlementError(
+                    f"Live channel {channel_tag} requires a signed MPD URL from the session tracker. "
+                    "Play the channel on dstv.stream and ensure the extension sends live_manifest_url.",
+                    status_code=502,
+                    code="LIVE_MANIFEST_REQUIRED",
                 )
+            manifest_url = signed_manifest
 
         return await self._generate_keys_with_session(
             content_id=content_id,
@@ -235,16 +270,20 @@ class DecryptionService:
             )
 
         try:
-            manifest_url = await ensure_fetchable_manifest_url(
-                self.settings,
-                manifest_url=manifest_url,
-                ls_session=ls_session,
-                content_type=content_type,
-                channel_tag=channel_tag,
-                streaming_filter=streaming_filter,
-                dstv_client=client,
-                user_access_token=user_access_token,
-            )
+            if manifest_url.startswith("http") and is_signed_manifest_url(manifest_url):
+                resolved_manifest_url = manifest_url
+            else:
+                resolved_manifest_url = await ensure_fetchable_manifest_url(
+                    self.settings,
+                    manifest_url=manifest_url,
+                    ls_session=ls_session,
+                    content_type=content_type,
+                    channel_tag=channel_tag,
+                    streaming_filter=streaming_filter,
+                    dstv_client=client,
+                    user_access_token=user_access_token,
+                )
+            manifest_url = resolved_manifest_url
             if channel_tag and manifest_url.startswith("http"):
                 set_stored_live_manifest_url(channel_tag, manifest_url)
         except ValueError as exc:

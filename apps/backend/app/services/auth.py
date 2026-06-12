@@ -547,6 +547,15 @@ def apply_tracked_session(
         request_url=request_url,
         source_url=source_url,
     )
+    if channel_tag and get_stored_live_manifest_url(channel_tag):
+        logger.info(
+            "Tracked session includes signed live manifest for channel %s",
+            channel_tag.strip().upper(),
+        )
+    elif live_manifest_url:
+        logger.warning(
+            "Tracked session live_manifest_url was not stored (invalid or missing channel tag)."
+        )
 
     token = normalize_bearer_token(authorization) if authorization is not None else None
     if authorization is not None and not token:

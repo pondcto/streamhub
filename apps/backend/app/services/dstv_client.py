@@ -9,7 +9,6 @@ from urllib.parse import urlencode, urljoin
 import httpx
 
 from app.config import Settings, get_settings
-from app.constants import BROWSER_USER_AGENT
 from app.services.auth import (
     get_catalog_connect_token,
     get_catalog_cookie,
@@ -20,7 +19,7 @@ from app.services.auth import (
     normalize_bearer_token,
     parse_session_info,
 )
-from app.utils.http_client import httpx_client_kwargs
+from app.utils.http_client import browser_request_headers, httpx_async_client
 from app.utils.redact import redact_sensitive
 
 logger = logging.getLogger(__name__)
@@ -94,21 +93,15 @@ class DStvClient:
 
     async def start(self) -> None:
         if self._client is None:
-            self._client = httpx.AsyncClient(
-                **httpx_client_kwargs(
+            self._client = httpx_async_client(
+                self.settings,
+                base_url=self.settings.dstv_api_base_url.rstrip("/"),
+                default_headers=browser_request_headers(
                     self.settings,
-                    base_url=self.settings.dstv_api_base_url.rstrip("/"),
-                    timeout=httpx.Timeout(30.0, connect=10.0),
-                    follow_redirects=True,
-                )
+                    accept="application/json, text/plain, */*",
+                ),
+                log_label="API",
             )
-            if self.settings.dstv_proxy_configured:
-                logger.info(
-                    "DStv API client using %s proxy at %s:%s",
-                    self.settings.dstv_proxy_type,
-                    self.settings.dstv_proxy_host,
-                    self.settings.dstv_proxy_port,
-                )
 
     async def close(self) -> None:
         if self._client is not None:
@@ -138,14 +131,10 @@ class DStvClient:
         path: str = "",
     ) -> Dict[str, str]:
         header_profile = profile or self._header_profile_for_path(path)
-        origin = self.settings.dstv_api_base_url.rstrip("/")
-        headers = {
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "en-ZA,en-US;q=0.9,en;q=0.8",
-            "User-Agent": BROWSER_USER_AGENT,
-            "Origin": origin,
-            "Referer": f"{origin}/",
-        }
+        headers = browser_request_headers(
+            self.settings,
+            accept="application/json, text/plain, */*",
+        )
         if header_profile.include_platform_id:
             headers["X-Platform-Id"] = self.settings.dstv_platform_id
         if header_profile.include_sec_fetch:

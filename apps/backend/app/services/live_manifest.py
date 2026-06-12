@@ -6,9 +6,8 @@ from urllib.parse import quote, urlencode, urlparse
 import httpx
 
 from app.config import Settings
-from app.constants import BROWSER_USER_AGENT
 from app.services.auth import _decode_jwt_payload
-from app.utils.http_client import httpx_client_kwargs
+from app.utils.http_client import browser_request_headers, httpx_async_client
 
 logger = logging.getLogger(__name__)
 
@@ -148,21 +147,11 @@ def _extract_akamai_token(data: Any) -> Optional[str]:
     return None
 
 
-def _cdn_browser_headers(settings: Settings) -> dict[str, str]:
-    origin = settings.dstv_api_base_url.rstrip("/")
-    return {
-        "Accept": "*/*",
-        "User-Agent": BROWSER_USER_AGENT,
-        "Origin": origin,
-        "Referer": f"{origin}/",
-    }
-
-
 def _browser_headers(settings: Settings, ls_session: str) -> dict[str, str]:
-    return {
-        **_cdn_browser_headers(settings),
-        "Authorization": f"Bearer {ls_session}",
-    }
+    return browser_request_headers(
+        settings,
+        Authorization=f"Bearer {ls_session}",
+    )
 
 
 def _is_mpd_response(response: httpx.Response) -> bool:
@@ -234,10 +223,8 @@ async def _probe_manifest_url(
     url: str,
     headers: Optional[dict[str, str]] = None,
 ) -> Optional[str]:
-    headers = headers or _cdn_browser_headers(settings)
-    async with httpx.AsyncClient(
-        **httpx_client_kwargs(settings, timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True)
-    ) as client:
+    headers = headers or browser_request_headers(settings)
+    async with httpx_async_client(settings, log_label="live-manifest") as client:
         try:
             response = await client.get(url, headers=headers)
         except httpx.RequestError as exc:
@@ -289,9 +276,7 @@ async def _probe_gtm_manifest_urls(
             )
         )
 
-    async with httpx.AsyncClient(
-        **httpx_client_kwargs(settings, timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True)
-    ) as client:
+    async with httpx_async_client(settings, log_label="live-manifest") as client:
         for url in candidate_urls:
             for variant_headers in session_header_variants:
                 try:
@@ -344,6 +329,10 @@ async def _resolve_stored_live_manifest(
 
     stored = get_stored_live_manifest_url(channel_tag)
     if not stored or not is_signed_manifest_url(stored):
+        logger.warning(
+            "No stored signed live manifest for channel %s",
+            channel_tag,
+        )
         return None
 
     probed = await _probe_manifest_url(settings, stored)
@@ -384,69 +373,13 @@ async def resolve_live_manifest_url(
         return stored_manifest
 
     jwt_manifest = _manifest_from_session_jwt(ls_session)
-    if jwt_manifest:
+    if jwt_manifest and is_signed_manifest_url(jwt_manifest):
         return jwt_manifest
-
-    gtm_manifest = await _probe_gtm_manifest_urls(
-        settings,
-        manifest_path=manifest_path,
-        ls_session=ls_session,
-        channel_tag=channel_tag,
-        streaming_filter=streaming_filter,
-    )
-    if gtm_manifest:
-        return gtm_manifest
-
-    if dstv_client is not None:
-        try:
-            api_manifest = await dstv_client.request_live_playback_manifest(
-                channel_tag=channel_tag or "",
-                ls_session=ls_session,
-                manifest_path=_normalize_manifest_path(manifest_path),
-                user_access_token=user_access_token,
-                streaming_filter=streaming_filter,
-            )
-            if api_manifest:
-                if is_signed_manifest_url(api_manifest):
-                    return api_manifest
-                token_manifest = await _probe_signed_token_urls(
-                    settings,
-                    token=api_manifest,
-                    manifest_path=manifest_path,
-                    ls_session=ls_session,
-                    streaming_filter=streaming_filter,
-                )
-                if token_manifest:
-                    return token_manifest
-                return api_manifest
-        except Exception as exc:
-            logger.warning("DStv playback manifest API failed for %s: %s", channel_tag, exc)
-
-        try:
-            api_token = await dstv_client.request_live_stream_token(
-                channel_tag=channel_tag or "",
-                ls_session=ls_session,
-                manifest_path=_normalize_manifest_path(manifest_path),
-                user_access_token=user_access_token,
-                streaming_filter=streaming_filter,
-            )
-            if api_token:
-                token_manifest = await _probe_signed_token_urls(
-                    settings,
-                    token=api_token,
-                    manifest_path=manifest_path,
-                    ls_session=ls_session,
-                    streaming_filter=streaming_filter,
-                )
-                if token_manifest:
-                    return token_manifest
-        except Exception as exc:
-            logger.warning("DStv stream token API failed for %s: %s", channel_tag, exc)
 
     raise ValueError(
         f"Could not resolve signed live manifest for {channel_tag or manifest_path}. "
-        "Play the channel on dstv.stream so the session tracker captures the signed MPD URL, "
-        "or refresh your Connect JWT (authorization header expires every ~15 minutes)."
+        "Play the channel on dstv.stream so the session tracker captures live_manifest_url "
+        "(the i-live-cache.akamaized.net hdntl MPD request)."
     )
 
 
