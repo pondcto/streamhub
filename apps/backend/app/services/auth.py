@@ -41,6 +41,7 @@ _irdeto_session: Optional[str] = None
 _tracked_captured_at: Optional[datetime] = None
 _tracked_source_url: Optional[str] = None
 _tracked_request_url: Optional[str] = None
+_live_manifest_urls: Dict[str, str] = {}
 
 
 def _decode_jwt_payload(token: str) -> Dict[str, Any]:
@@ -105,6 +106,7 @@ def _persist_session_state() -> None:
         "tracked_captured_at": _tracked_captured_at.isoformat() if _tracked_captured_at else None,
         "tracked_source_url": _tracked_source_url,
         "tracked_request_url": _tracked_request_url,
+        "live_manifest_urls": _live_manifest_urls,
     }
     SESSION_STORE_PATH.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -112,7 +114,7 @@ def _persist_session_state() -> None:
 def _apply_persisted_fields(payload: Dict[str, Any]) -> None:
     global _active_token, _configured_session, _catalog_connect_token, _catalog_cookie
     global _playback_profile_id, _playback_waf_token, _irdeto_session
-    global _tracked_captured_at, _tracked_source_url, _tracked_request_url
+    global _tracked_captured_at, _tracked_source_url, _tracked_request_url, _live_manifest_urls
 
     token = normalize_bearer_token(payload.get("token"))
     if token:
@@ -168,6 +170,14 @@ def _apply_persisted_fields(payload: Dict[str, Any]) -> None:
         value = str(payload.get("tracked_request_url") or "").strip()
         _tracked_request_url = value or None
 
+    stored_manifests = payload.get("live_manifest_urls")
+    if isinstance(stored_manifests, dict):
+        _live_manifest_urls = {
+            str(key).strip().upper(): str(value).strip()
+            for key, value in stored_manifests.items()
+            if str(key).strip() and str(value).strip()
+        }
+
 
 def _load_persisted_session() -> bool:
     if not SESSION_STORE_PATH.is_file():
@@ -182,6 +192,10 @@ def _load_persisted_session() -> bool:
         return False
 
     _apply_persisted_fields(payload)
+    capture_live_manifest_urls(
+        request_url=_tracked_request_url,
+        source_url=_tracked_source_url,
+    )
     if not _has_saved_settings():
         SESSION_STORE_PATH.unlink(missing_ok=True)
         return False
@@ -287,13 +301,98 @@ def get_playback_token() -> Optional[str]:
     return _active_token
 
 
+def _token_remaining_seconds(token: Optional[str]) -> int:
+    normalized = normalize_bearer_token(token)
+    if not normalized:
+        return 0
+    try:
+        return parse_session_info(normalized).remaining_seconds
+    except ValueError:
+        return 0
+
+
+def get_entitlement_access_token() -> Optional[str]:
+    """Return a non-expired Connect JWT suitable for entitlement API calls."""
+    from app.config import get_settings
+
+    candidates = [
+        get_catalog_connect_token(),
+        normalize_bearer_token(get_settings().dstv_connect_token),
+        _active_token,
+    ]
+    session = get_configured_session()
+    if session and session.dstv_access_token:
+        candidates.insert(0, session.dstv_access_token)
+
+    seen: set[str] = set()
+    for token in candidates:
+        normalized = normalize_bearer_token(token)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        if _token_remaining_seconds(normalized) > 60:
+            return normalized
+    return None
+
+
 def get_effective_access_token() -> Optional[str]:
+    entitlement_token = get_entitlement_access_token()
+    if entitlement_token:
+        return entitlement_token
+
     session = get_configured_session()
     if session and session.dstv_access_token:
         return session.dstv_access_token
     from app.config import get_settings
 
     return normalize_bearer_token(get_settings().dstv_connect_token) or _active_token
+
+
+def get_stored_live_manifest_url(channel_tag: str) -> Optional[str]:
+    if not channel_tag:
+        return None
+    return _live_manifest_urls.get(channel_tag.strip().upper())
+
+
+def set_stored_live_manifest_url(channel_tag: str, manifest_url: str) -> None:
+    global _live_manifest_urls
+    tag = channel_tag.strip().upper()
+    url = manifest_url.strip()
+    if not tag or not url:
+        return
+    _live_manifest_urls[tag] = url
+    _persist_session_state()
+    logger.info("Stored signed live manifest URL for channel %s.", tag)
+
+
+def capture_live_manifest_urls(
+    *,
+    channel_tag: Optional[str] = None,
+    live_manifest_url: Optional[str] = None,
+    request_url: Optional[str] = None,
+    source_url: Optional[str] = None,
+) -> None:
+    from app.services.live_manifest import (
+        channel_tag_from_signed_manifest_url,
+        is_signed_manifest_url,
+    )
+
+    candidates: list[tuple[Optional[str], str]] = []
+    if live_manifest_url:
+        candidates.append((channel_tag, live_manifest_url))
+    if request_url:
+        candidates.append((channel_tag, request_url))
+    if source_url:
+        candidates.append((channel_tag, source_url))
+
+    for explicit_tag, url in candidates:
+        value = str(url or "").strip()
+        if not value or not is_signed_manifest_url(value):
+            continue
+        tag = (explicit_tag or channel_tag_from_signed_manifest_url(value) or "").strip().upper()
+        if tag:
+            set_stored_live_manifest_url(tag, value)
+            return
 
 
 def get_catalog_connect_token() -> Optional[str]:
@@ -410,6 +509,8 @@ def apply_tracked_session(
     captured_at: Optional[datetime] = None,
     source_url: Optional[str] = None,
     request_url: Optional[str] = None,
+    channel_tag: Optional[str] = None,
+    live_manifest_url: Optional[str] = None,
 ) -> SessionInfo:
     """Apply session fields posted by an external DStv browser tracker."""
     global _tracked_captured_at, _tracked_source_url, _tracked_request_url
@@ -439,6 +540,13 @@ def apply_tracked_session(
         _tracked_source_url = source_url.strip() or None
     if request_url is not None:
         _tracked_request_url = request_url.strip() or None
+
+    capture_live_manifest_urls(
+        channel_tag=channel_tag,
+        live_manifest_url=live_manifest_url,
+        request_url=request_url,
+        source_url=source_url,
+    )
 
     token = normalize_bearer_token(authorization) if authorization is not None else None
     if authorization is not None and not token:

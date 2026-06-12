@@ -13,10 +13,12 @@ from app.constants import BROWSER_USER_AGENT
 from app.services.auth import (
     get_catalog_connect_token,
     get_catalog_cookie,
+    get_entitlement_access_token,
     get_playback_profile_id,
     get_playback_token,
     get_playback_waf_token,
     normalize_bearer_token,
+    parse_session_info,
 )
 from app.utils.http_client import httpx_client_kwargs
 from app.utils.redact import redact_sensitive
@@ -589,13 +591,42 @@ class DStvClient:
                     return hint
         return None
 
+    def _live_auth_bearers(
+        self,
+        user_access_token: Optional[str],
+        ls_session: str,
+    ) -> List[str]:
+        bearers: List[str] = []
+        seen: set[str] = set()
+
+        for token in (
+            get_entitlement_access_token(),
+            normalize_bearer_token(user_access_token),
+            normalize_bearer_token(ls_session),
+        ):
+            if not token or token in seen:
+                continue
+            seen.add(token)
+            if token == ls_session:
+                bearers.append(token)
+                continue
+            try:
+                if parse_session_info(token).remaining_seconds > 60:
+                    bearers.append(token)
+            except ValueError:
+                continue
+
+        if ls_session not in seen:
+            bearers.append(ls_session)
+        return bearers
+
     async def request_live_playback_manifest(
         self,
         *,
         channel_tag: str,
         ls_session: str,
         manifest_path: str,
-        user_access_token: str,
+        user_access_token: Optional[str] = None,
         streaming_filter: Optional[str] = None,
     ) -> Optional[str]:
         from app.services.live_manifest import (
@@ -620,27 +651,33 @@ class DStvClient:
         payload["ucp_filter"] = filter_value
         payload["streaming_filter"] = filter_value
 
-        for path in PLAYBACK_MANIFEST_PATHS:
-            if not path.endswith("/manifest") and not path.endswith("/playback"):
-                continue
-            try:
-                data = await self._request_with_profile(
-                    "POST",
-                    path,
-                    json_body=payload,
-                    user_access_token=user_access_token,
-                    cookie=self._catalog_cookie(),
-                    header_profile=ENTITLEMENT_HEADER_PROFILE,
-                    retry=False,
-                )
-            except DStvAPIError as exc:
-                logger.debug("Playback manifest POST %s failed: %s", path, exc.status_code)
-                continue
+        for bearer in self._live_auth_bearers(user_access_token, ls_session):
+            for path in PLAYBACK_MANIFEST_PATHS:
+                if not path.endswith("/manifest") and not path.endswith("/playback"):
+                    continue
+                try:
+                    data = await self._request_with_profile(
+                        "POST",
+                        path,
+                        json_body=payload,
+                        user_access_token=bearer,
+                        cookie=self._catalog_cookie(),
+                        header_profile=ENTITLEMENT_HEADER_PROFILE,
+                        retry=False,
+                    )
+                except DStvAPIError as exc:
+                    logger.debug(
+                        "Playback manifest POST %s failed (%s): %s",
+                        path,
+                        "irdeto" if bearer == ls_session else "connect",
+                        exc.status_code,
+                    )
+                    continue
 
-            manifest = _extract_manifest_url(data)
-            if manifest:
-                logger.info("Resolved live manifest for %s via %s", channel_tag, path)
-                return manifest
+                manifest = _extract_manifest_url(data)
+                if manifest:
+                    logger.info("Resolved live manifest for %s via %s", channel_tag, path)
+                    return manifest
 
         return None
 
@@ -650,7 +687,7 @@ class DStvClient:
         channel_tag: str,
         ls_session: str,
         manifest_path: str,
-        user_access_token: str,
+        user_access_token: Optional[str] = None,
         streaming_filter: Optional[str] = None,
     ) -> Optional[str]:
         from app.services.live_manifest import (
@@ -676,31 +713,37 @@ class DStvClient:
         payload["ucp_filter"] = filter_value
         payload["streaming_filter"] = filter_value
 
-        for path in PLAYBACK_MANIFEST_PATHS:
-            if not path.endswith("/token"):
-                continue
-            try:
-                data = await self._request_with_profile(
-                    "POST",
-                    path,
-                    json_body=payload,
-                    user_access_token=user_access_token,
-                    cookie=self._catalog_cookie(),
-                    header_profile=ENTITLEMENT_HEADER_PROFILE,
-                    retry=False,
-                )
-            except DStvAPIError as exc:
-                logger.debug("Stream token POST %s failed: %s", path, exc.status_code)
-                continue
+        for bearer in self._live_auth_bearers(user_access_token, ls_session):
+            for path in PLAYBACK_MANIFEST_PATHS:
+                if not path.endswith("/token"):
+                    continue
+                try:
+                    data = await self._request_with_profile(
+                        "POST",
+                        path,
+                        json_body=payload,
+                        user_access_token=bearer,
+                        cookie=self._catalog_cookie(),
+                        header_profile=ENTITLEMENT_HEADER_PROFILE,
+                        retry=False,
+                    )
+                except DStvAPIError as exc:
+                    logger.debug(
+                        "Stream token POST %s failed (%s): %s",
+                        path,
+                        "irdeto" if bearer == ls_session else "connect",
+                        exc.status_code,
+                    )
+                    continue
 
-            token = _extract_akamai_token(data)
-            if token:
-                logger.info("Resolved Akamai token for %s via %s", channel_tag, path)
-                return token
+                token = _extract_akamai_token(data)
+                if token:
+                    logger.info("Resolved Akamai token for %s via %s", channel_tag, path)
+                    return token
 
-            manifest = _extract_manifest_url(data)
-            if manifest and ("hmac=" in manifest or "hdntl=" in manifest):
-                return manifest
+                manifest = _extract_manifest_url(data)
+                if manifest and ("hmac=" in manifest or "hdntl=" in manifest):
+                    return manifest
 
         return None
 

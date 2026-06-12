@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any, Optional
 from urllib.parse import quote, urlencode, urlparse
 
@@ -28,6 +29,25 @@ PLAYBACK_MANIFEST_PATHS = (
     "/api/vod-auth/media/manifest",
     "/api/vod-auth/media/playback",
 )
+
+
+def channel_tag_from_signed_manifest_url(url: str) -> Optional[str]:
+    acl_match = re.search(r"acl=[^~]*%2f([^*%~]+)", url, re.IGNORECASE)
+    if acl_match:
+        return acl_match.group(1).upper()
+
+    path = urlparse(url).path
+    repeat_match = re.search(r"/([A-Za-z0-9]+)/\1\.isml", path, re.IGNORECASE)
+    if repeat_match:
+        return repeat_match.group(1).upper()
+
+    parts = [part for part in path.split("/") if part]
+    for part in reversed(parts):
+        if part.endswith(".isml"):
+            name = part[: -len(".isml")]
+            if name and name.isalnum():
+                return name.upper()
+    return None
 
 
 def is_signed_manifest_url(url: str) -> bool:
@@ -128,13 +148,19 @@ def _extract_akamai_token(data: Any) -> Optional[str]:
     return None
 
 
-def _browser_headers(settings: Settings, ls_session: str) -> dict[str, str]:
+def _cdn_browser_headers(settings: Settings) -> dict[str, str]:
     origin = settings.dstv_api_base_url.rstrip("/")
     return {
         "Accept": "*/*",
         "User-Agent": BROWSER_USER_AGENT,
         "Origin": origin,
         "Referer": f"{origin}/",
+    }
+
+
+def _browser_headers(settings: Settings, ls_session: str) -> dict[str, str]:
+    return {
+        **_cdn_browser_headers(settings),
         "Authorization": f"Bearer {ls_session}",
     }
 
@@ -206,8 +232,9 @@ def _build_signed_urls_from_token(
 async def _probe_manifest_url(
     settings: Settings,
     url: str,
-    headers: dict[str, str],
+    headers: Optional[dict[str, str]] = None,
 ) -> Optional[str]:
+    headers = headers or _cdn_browser_headers(settings)
     async with httpx.AsyncClient(
         **httpx_client_kwargs(settings, timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True)
     ) as client:
@@ -305,6 +332,36 @@ async def _probe_signed_token_urls(
     return None
 
 
+async def _resolve_stored_live_manifest(
+    settings: Settings,
+    *,
+    channel_tag: Optional[str],
+) -> Optional[str]:
+    if not channel_tag:
+        return None
+
+    from app.services.auth import get_stored_live_manifest_url
+
+    stored = get_stored_live_manifest_url(channel_tag)
+    if not stored or not is_signed_manifest_url(stored):
+        return None
+
+    probed = await _probe_manifest_url(settings, stored)
+    if probed:
+        logger.info(
+            "Using browser-captured live manifest for %s -> %s",
+            channel_tag,
+            probed[:120],
+        )
+        return probed
+
+    logger.info(
+        "Using stored live manifest for %s (probe skipped or failed validation).",
+        channel_tag,
+    )
+    return stored
+
+
 async def resolve_live_manifest_url(
     settings: Settings,
     *,
@@ -318,6 +375,13 @@ async def resolve_live_manifest_url(
     """Turn an unsigned live path into a fetchable Akamai-signed MPD URL."""
     if manifest_path.startswith("http") and is_signed_manifest_url(manifest_path):
         return manifest_path
+
+    stored_manifest = await _resolve_stored_live_manifest(
+        settings,
+        channel_tag=channel_tag,
+    )
+    if stored_manifest:
+        return stored_manifest
 
     jwt_manifest = _manifest_from_session_jwt(ls_session)
     if jwt_manifest:
@@ -333,7 +397,7 @@ async def resolve_live_manifest_url(
     if gtm_manifest:
         return gtm_manifest
 
-    if dstv_client is not None and user_access_token:
+    if dstv_client is not None:
         try:
             api_manifest = await dstv_client.request_live_playback_manifest(
                 channel_tag=channel_tag or "",
@@ -381,7 +445,8 @@ async def resolve_live_manifest_url(
 
     raise ValueError(
         f"Could not resolve signed live manifest for {channel_tag or manifest_path}. "
-        "Play the channel on dstv.stream and sync a fresh session via the tracker extension."
+        "Play the channel on dstv.stream so the session tracker captures the signed MPD URL, "
+        "or refresh your Connect JWT (authorization header expires every ~15 minutes)."
     )
 
 

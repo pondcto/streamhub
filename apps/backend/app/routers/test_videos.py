@@ -154,8 +154,9 @@ async def generate_test_item_keys(item_id: str) -> DecryptionKeysResponse:
             detail={
                 "code": exc.code,
                 "message": (
-                    f"{exc}. Wait for the session-track extension to refresh keys, "
-                    "or configure DSTV_CONNECT_TOKEN."
+                    f"{exc}. For live channels, play the stream on dstv.stream so the "
+                    "session tracker captures the signed MPD URL, refresh the Connect JWT "
+                    "(expires every ~15 min), or configure DSTV_CONNECT_TOKEN."
                 ),
             },
         ) from exc

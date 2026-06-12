@@ -15,6 +15,8 @@ class TrackedSessionRequest(BaseModel):
     captured_at: Optional[datetime] = None
     source_url: Optional[str] = Field(default=None, max_length=2048)
     request_url: Optional[str] = Field(default=None, max_length=2048)
+    channel_tag: Optional[str] = None
+    live_manifest_url: Optional[str] = Field(default=None, max_length=4096)
 
 
 class TestKeyRefreshStatus(BaseModel):

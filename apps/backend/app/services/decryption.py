@@ -5,7 +5,12 @@ from typing import Optional
 
 from app.config import Settings, get_settings
 from app.models.decryption import ContentKey, DecryptionKeysResponse
-from app.services.auth import get_effective_access_token, get_irdeto_session, parse_session_info
+from app.services.auth import (
+    get_entitlement_access_token,
+    get_irdeto_session,
+    parse_session_info,
+    set_stored_live_manifest_url,
+)
 from app.services.dstv_client import DStvAPIError, DStvClient, is_expired
 from app.services.entitlement import EntitlementError
 from app.services.entitlement_response import parse_entitlement_response
@@ -40,7 +45,7 @@ class DecryptionService:
 
         manual_session = get_irdeto_session()
         resolved_manifest_url = manifest_url
-        effective_access_token = user_access_token or get_effective_access_token()
+        entitlement_token = get_entitlement_access_token()
 
         if channel_tag and not manifest_url.startswith("http"):
             async with DStvClient(self.settings) as lookup_client:
@@ -62,13 +67,13 @@ class DecryptionService:
                 channel_tag=channel_tag,
             )
 
-        if effective_access_token:
+        if entitlement_token:
             async with DStvClient(self.settings) as client:
                 try:
                     entitlement_data = await client.request_entitlement_session(
                         content_id=channel_tag or content_id,
                         content_type=content_type,
-                        user_access_token=effective_access_token,
+                        user_access_token=entitlement_token,
                         channel_tag=channel_tag,
                         manifest_hint=resolved_manifest_url,
                     )
@@ -84,6 +89,7 @@ class DecryptionService:
                             manifest_url=resolved_manifest_url,
                             ls_session=manual_session,
                             channel_tag=channel_tag,
+                            user_access_token=entitlement_token,
                         )
                     if exc.status_code in (401, 403):
                         raise EntitlementError(
@@ -118,6 +124,7 @@ class DecryptionService:
                             manifest_url=resolved_manifest_url,
                             ls_session=manual_session,
                             channel_tag=channel_tag,
+                            user_access_token=entitlement_token,
                         )
                     raise EntitlementError(
                         "Entitlement response did not include a session token.",
@@ -142,18 +149,18 @@ class DecryptionService:
                     streaming_filter=streaming_filter,
                     channel_tag=channel_tag,
                     client=client,
-                    user_access_token=effective_access_token,
+                    user_access_token=entitlement_token,
                 )
 
         if manual_session:
-            logger.info("Using saved Irdeto session for content %s (no Connect JWT)", content_id)
+            logger.info("Using saved Irdeto session for content %s (no valid Connect JWT)", content_id)
             return await self._generate_keys_with_manual_session(
                 content_id=content_id,
                 content_type=content_type,
                 manifest_url=resolved_manifest_url,
                 ls_session=manual_session,
                 channel_tag=channel_tag,
-                user_access_token=effective_access_token,
+                user_access_token=entitlement_token,
             )
 
         raise EntitlementError(
@@ -179,7 +186,7 @@ class DecryptionService:
                 status_code=403,
                 code="SESSION_EXPIRED",
             )
-        if channel_tag and user_access_token:
+        if channel_tag:
             async with DStvClient(self.settings) as client:
                 return await self._generate_keys_with_session(
                     content_id=content_id,
@@ -238,6 +245,8 @@ class DecryptionService:
                 dstv_client=client,
                 user_access_token=user_access_token,
             )
+            if channel_tag and manifest_url.startswith("http"):
+                set_stored_live_manifest_url(channel_tag, manifest_url)
         except ValueError as exc:
             raise EntitlementError(
                 str(exc),
