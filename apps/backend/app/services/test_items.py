@@ -29,15 +29,14 @@ def find_test_item(item_id: str) -> Optional[TestItemSpec]:
     return None
 
 
-# SuperSport FHD live linear — matches USL04/FHD/FHD.isml from browser capture.
 TEST_ITEMS: tuple[TestItemSpec, ...] = (
     TestItemSpec(
-        id="FHD",
+        id="TS2",
         content_type="live",
-        channel_tag="FHD",
-        manifest_hint="USL04/FHD/FHD.isml/.mpd",
-        title="SuperSport FHD",
-        description="Live sport linear channel (576p mobile filter).",
+        channel_tag="TS2",
+        manifest_hint="USL02/TS2/TS2.isml/.mpd",
+        title="TS2 Live",
+        description="Live linear channel (576p mobile filter).",
     ),
     TestItemSpec(
         id="SS127028_SOC060626WCFBELVTUNHD10_SUN",
@@ -53,12 +52,5 @@ TEST_ITEMS: tuple[TestItemSpec, ...] = (
         ),
         title="Belgium v Tunisia",
         description="FIFA World Cup friendly highlight — Matchday 3, King Baudouin Stadium Brussels.",
-    ),
-    TestItemSpec(
-        id="MSH",
-        content_type="live",
-        channel_tag="MSH",
-        title="SuperSport Football",
-        description="Live football and sport coverage.",
     ),
 )

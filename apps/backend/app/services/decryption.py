@@ -9,6 +9,7 @@ from app.services.auth import get_irdeto_session, parse_session_info
 from app.services.dstv_client import DStvAPIError, DStvClient, is_expired
 from app.services.entitlement import EntitlementError
 from app.services.entitlement_response import parse_entitlement_response
+from app.services.live_manifest import ensure_fetchable_manifest_url
 from app.services.manifest_parser import ManifestParserError, fetch_manifest_drm_data
 from app.services.widevine_keys import WidevineKeyError, generate_widevine_keys
 
@@ -39,16 +40,18 @@ class DecryptionService:
 
         manual_session = get_irdeto_session()
 
-        # Prefer browser-captured Irdeto session — avoids WAF-blocked entitlement replay.
-        if manual_session and manifest_url:
+        # Prefer browser-captured Irdeto session for VOD/streaming (live needs entitlement filter).
+        if manual_session and manifest_url and content_type != "live":
             logger.info(
                 "Using saved Irdeto session for content %s (skipping entitlement API)",
                 content_id,
             )
             return await self._generate_keys_with_manual_session(
                 content_id=content_id,
+                content_type=content_type,
                 manifest_url=manifest_url,
                 ls_session=manual_session,
+                channel_tag=channel_tag,
             )
 
         if user_access_token:
@@ -69,8 +72,10 @@ class DecryptionService:
                         )
                         return await self._generate_keys_with_manual_session(
                             content_id=content_id,
+                            content_type=content_type,
                             manifest_url=manifest_url,
                             ls_session=manual_session,
+                            channel_tag=channel_tag,
                         )
                     if exc.status_code in (401, 403):
                         raise EntitlementError(
@@ -101,8 +106,10 @@ class DecryptionService:
                         )
                         return await self._generate_keys_with_manual_session(
                             content_id=content_id,
+                            content_type=content_type,
                             manifest_url=manifest_url,
                             ls_session=manual_session,
+                            channel_tag=channel_tag,
                         )
                     raise EntitlementError(
                         "Entitlement response did not include a session token.",
@@ -119,11 +126,13 @@ class DecryptionService:
 
                 return await self._generate_keys_with_session(
                     content_id=content_id,
+                    content_type=content_type,
                     manifest_url=resolved_manifest or manifest_url,
                     ls_session=ls_session,
                     expires_at=expires_at,
-                    drm_content_id=drm_content_id,
+                    drm_content_id=drm_content_id or channel_tag or content_id,
                     streaming_filter=streaming_filter,
+                    channel_tag=channel_tag,
                     client=client,
                 )
 
@@ -131,8 +140,10 @@ class DecryptionService:
             logger.info("Using saved Irdeto session for content %s (no Connect JWT)", content_id)
             return await self._generate_keys_with_manual_session(
                 content_id=content_id,
+                content_type=content_type,
                 manifest_url=manifest_url,
                 ls_session=manual_session,
+                channel_tag=channel_tag,
             )
 
         raise EntitlementError(
@@ -145,8 +156,10 @@ class DecryptionService:
         self,
         *,
         content_id: str,
+        content_type: str,
         manifest_url: str,
         ls_session: str,
+        channel_tag: Optional[str] = None,
     ) -> DecryptionKeysResponse:
         expires_at = parse_session_info(ls_session).expires_at or datetime.now(timezone.utc)
         if is_expired(expires_at):
@@ -157,22 +170,26 @@ class DecryptionService:
             )
         return await self._generate_keys_with_session(
             content_id=content_id,
+            content_type=content_type,
             manifest_url=manifest_url,
             ls_session=ls_session,
             expires_at=expires_at,
-            drm_content_id=content_id,
+            drm_content_id=channel_tag or content_id,
             streaming_filter=None,
+            channel_tag=channel_tag,
         )
 
     async def _generate_keys_with_session(
         self,
         *,
         content_id: str,
+        content_type: str,
         manifest_url: str,
         ls_session: str,
         expires_at: datetime,
         drm_content_id: str,
         streaming_filter: Optional[str],
+        channel_tag: Optional[str] = None,
         client: Optional[DStvClient] = None,
     ) -> DecryptionKeysResponse:
         if is_expired(expires_at):
@@ -181,6 +198,22 @@ class DecryptionService:
                 status_code=403,
                 code="SESSION_EXPIRED",
             )
+
+        try:
+            manifest_url = await ensure_fetchable_manifest_url(
+                self.settings,
+                manifest_url=manifest_url,
+                ls_session=ls_session,
+                content_type=content_type,
+                channel_tag=channel_tag,
+                streaming_filter=streaming_filter,
+            )
+        except ValueError as exc:
+            raise EntitlementError(
+                str(exc),
+                status_code=502,
+                code="MANIFEST_RESOLVE_FAILED",
+            ) from exc
 
         try:
             manifest = await fetch_manifest_drm_data(

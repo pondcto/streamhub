@@ -22,8 +22,13 @@ def parse_entitlement_response(
     manifest_url = (
         session_obj.get("manifestUrl")
         or session_obj.get("manifest_url")
+        or session_obj.get("signedManifestUrl")
+        or session_obj.get("streamUrl")
         or root.get("manifestUrl")
+        or root.get("manifest_url")
+        or root.get("signedManifestUrl")
         or root.get("playbackUrl")
+        or root.get("streamUrl")
         or manifest_hint
     )
     streaming_filter = root.get("streaming_filter") or root.get("ucp_filter") or ""
