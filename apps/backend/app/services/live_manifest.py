@@ -1,6 +1,6 @@
 import logging
-from typing import Optional
-from urllib.parse import urlencode, urlparse
+from typing import Any, Optional
+from urllib.parse import quote, urlencode, urlparse
 
 import httpx
 
@@ -17,6 +17,18 @@ DEFAULT_LIVE_STREAMING_FILTER = (
     "%28type%3D%3D%22textstream%22%29"
 )
 
+PLAYBACK_MANIFEST_PATHS = (
+    "/api/vod-auth/ucp/token",
+    "/api/vod-auth/playback/token",
+    "/api/vod-auth/streaming/token",
+    "/api/vod-auth/playback/manifest",
+    "/api/vod-auth/streaming/manifest",
+    "/api/vod-auth/entitlement/manifest",
+    "/api/vod-auth/ucp/manifest",
+    "/api/vod-auth/media/manifest",
+    "/api/vod-auth/media/playback",
+)
+
 
 def is_signed_manifest_url(url: str) -> bool:
     lowered = url.lower()
@@ -24,6 +36,23 @@ def is_signed_manifest_url(url: str) -> bool:
         marker in lowered
         for marker in ("hdntl=", "hdnea=", "__token__", "hmac=")
     )
+
+
+def manifest_hint_from_player_url(player_url: Optional[str]) -> Optional[str]:
+    """Unsigned MPD path from a live channel playerUrl (no hdntl/hmac)."""
+    if not player_url:
+        return None
+    parsed = urlparse(str(player_url).strip())
+    if is_signed_manifest_url(str(player_url)):
+        return str(player_url).strip()
+    path = parsed.path.lstrip("/")
+    if not path:
+        return None
+    if path.endswith(".ism"):
+        return f"{path}/.mpd"
+    if path.endswith(".mpd"):
+        return path
+    return None
 
 
 def _manifest_from_session_jwt(ls_session: str) -> Optional[str]:
@@ -36,6 +65,66 @@ def _manifest_from_session_jwt(ls_session: str) -> Optional[str]:
         value = claims.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
+    return None
+
+
+def _extract_manifest_url(data: Any) -> Optional[str]:
+    if not isinstance(data, dict):
+        return None
+
+    candidates: list[Any] = [data]
+    nested = data.get("data")
+    if isinstance(nested, dict):
+        candidates.append(nested)
+
+    for root in candidates:
+        for key in (
+            "manifestUrl",
+            "manifest_url",
+            "signedManifestUrl",
+            "playbackUrl",
+            "streamUrl",
+            "url",
+            "mpdUrl",
+        ):
+            value = root.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        session_field = root.get("session")
+        if isinstance(session_field, dict):
+            for key in ("manifestUrl", "manifest_url", "playbackUrl"):
+                value = session_field.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+    return None
+
+
+def _extract_akamai_token(data: Any) -> Optional[str]:
+    if not isinstance(data, dict):
+        return None
+
+    candidates: list[Any] = [data]
+    nested = data.get("data")
+    if isinstance(nested, dict):
+        candidates.append(nested)
+
+    for root in candidates:
+        for key in (
+            "hdntl",
+            "token",
+            "akamaiToken",
+            "edgeAuthToken",
+            "playbackToken",
+            "streamToken",
+            "authToken",
+        ):
+            value = root.get(key)
+            if isinstance(value, str) and value.strip():
+                token = value.strip()
+                if "hmac=" in token or token.startswith("hdntl="):
+                    return token
     return None
 
 
@@ -58,50 +147,120 @@ def _is_mpd_response(response: httpx.Response) -> bool:
     return "<MPD" in body
 
 
-async def resolve_live_manifest_url(
+def _normalize_manifest_path(manifest_path: str) -> str:
+    if manifest_path.startswith("http"):
+        if is_signed_manifest_url(manifest_path):
+            return manifest_path
+        return urlparse(manifest_path).path.lstrip("/")
+    return manifest_path.strip().lstrip("/")
+
+
+def _path_variants(manifest_path: str) -> list[str]:
+    path = _normalize_manifest_path(manifest_path)
+    if path.startswith("http"):
+        return [path]
+
+    variants = [path]
+    if path.endswith("/.mpd"):
+        variants.append(path[: -len("/.mpd")])
+    elif path.endswith(".mpd") and not path.endswith(".ism/.mpd"):
+        variants.append(path[: -len(".mpd")])
+    return list(dict.fromkeys(variants))
+
+
+def _append_filter(url: str, streaming_filter: Optional[str]) -> str:
+    suffix = streaming_filter or DEFAULT_LIVE_STREAMING_FILTER
+    if not suffix:
+        return url
+    if not suffix.startswith("?"):
+        suffix = f"?{suffix}"
+    if "?" in url:
+        return f"{url}&{suffix.lstrip('?')}"
+    return f"{url}{suffix}"
+
+
+def _build_signed_urls_from_token(
+    settings: Settings,
+    token: str,
+    manifest_path: str,
+    streaming_filter: Optional[str],
+) -> list[str]:
+    path = _normalize_manifest_path(manifest_path)
+    if path.startswith("http"):
+        return [path]
+
+    token_body = token.strip()
+    if token_body.startswith("hdntl="):
+        token_body = token_body[len("hdntl=") :]
+
+    cdn_base = settings.dstv_live_cdn_base_url.rstrip("/")
+    gtm_base = settings.dstv_live_gtm_base_url.rstrip("/")
+    encoded_token = quote(token_body, safe="")
+
+    return [
+        _append_filter(f"{cdn_base}/hdntl={token_body}/{path}", streaming_filter),
+        _append_filter(f"{gtm_base}/__token__{encoded_token}/{path}", streaming_filter),
+    ]
+
+
+async def _probe_manifest_url(
+    settings: Settings,
+    url: str,
+    headers: dict[str, str],
+) -> Optional[str]:
+    async with httpx.AsyncClient(
+        **httpx_client_kwargs(settings, timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True)
+    ) as client:
+        try:
+            response = await client.get(url, headers=headers)
+        except httpx.RequestError as exc:
+            logger.debug("Live manifest probe failed for %s: %s", url[:120], exc)
+            return None
+
+        if response.status_code >= 400:
+            logger.debug(
+                "Live manifest probe %s returned %s",
+                url[:120],
+                response.status_code,
+            )
+            return None
+
+        final_url = str(response.url)
+        if _is_mpd_response(response):
+            return final_url
+    return None
+
+
+async def _probe_gtm_manifest_urls(
     settings: Settings,
     *,
     manifest_path: str,
     ls_session: str,
-    channel_tag: Optional[str] = None,
-    streaming_filter: Optional[str] = None,
-) -> str:
-    """
-    Turn an unsigned live path (e.g. USL02/TS2/TS2.isml/.mpd) into a fetchable
-    Akamai-signed MPD URL using the Irdeto streaming session JWT.
-    """
-    if manifest_path.startswith("http"):
-        if is_signed_manifest_url(manifest_path):
-            return manifest_path
-        path = urlparse(manifest_path).path.lstrip("/")
-    else:
-        path = manifest_path.strip().lstrip("/")
-
-    jwt_manifest = _manifest_from_session_jwt(ls_session)
-    if jwt_manifest:
-        return jwt_manifest
-
-    filter_suffix = streaming_filter or DEFAULT_LIVE_STREAMING_FILTER
-    if filter_suffix and not filter_suffix.startswith("?"):
-        filter_suffix = f"?{filter_suffix}"
-
-    gtm_base = getattr(settings, "dstv_live_gtm_base_url", "https://i-live-gtm.dstv.com").rstrip("/")
+    channel_tag: Optional[str],
+    streaming_filter: Optional[str],
+) -> Optional[str]:
+    gtm_base = settings.dstv_live_gtm_base_url.rstrip("/")
     headers = _browser_headers(settings, ls_session)
-
     session_header_variants = [
         headers,
         {**headers, "X-Irdeto-Session": ls_session},
         {**headers, "x-irdeto-session": ls_session},
+        {k: v for k, v in headers.items() if k != "Authorization"},
     ]
 
     query_params: dict[str, str] = {"ls_session": ls_session}
     if channel_tag:
         query_params["contentId"] = channel_tag
 
-    candidate_urls = [
-        f"{gtm_base}/{path}{filter_suffix}",
-        f"{gtm_base}/{path}?{urlencode(query_params)}{filter_suffix.replace('?', '&', 1) if filter_suffix.startswith('?') else filter_suffix}",
-    ]
+    candidate_urls: list[str] = []
+    for path in _path_variants(manifest_path):
+        candidate_urls.append(_append_filter(f"{gtm_base}/{path}", streaming_filter))
+        candidate_urls.append(
+            _append_filter(
+                f"{gtm_base}/{path}?{urlencode(query_params)}",
+                streaming_filter,
+            )
+        )
 
     async with httpx.AsyncClient(
         **httpx_client_kwargs(settings, timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True)
@@ -111,24 +270,118 @@ async def resolve_live_manifest_url(
                 try:
                     response = await client.get(url, headers=variant_headers)
                 except httpx.RequestError as exc:
-                    logger.debug("Live manifest request failed for %s: %s", url, exc)
+                    logger.debug("GTM manifest request failed for %s: %s", url[:120], exc)
                     continue
 
                 if response.status_code >= 400:
                     continue
 
                 final_url = str(response.url)
-                if _is_mpd_response(response):
+                if is_signed_manifest_url(final_url) and _is_mpd_response(response):
                     logger.info(
-                        "Resolved live manifest for %s -> %s",
-                        channel_tag or path,
+                        "Resolved live manifest for %s via GTM -> %s",
+                        channel_tag or manifest_path,
                         final_url[:120],
                     )
                     return final_url
 
+    return None
+
+
+async def _probe_signed_token_urls(
+    settings: Settings,
+    *,
+    token: str,
+    manifest_path: str,
+    ls_session: str,
+    streaming_filter: Optional[str],
+) -> Optional[str]:
+    headers = _browser_headers(settings, ls_session)
+    for url in _build_signed_urls_from_token(settings, token, manifest_path, streaming_filter):
+        resolved = await _probe_manifest_url(settings, url, headers)
+        if resolved:
+            logger.info("Resolved live manifest via Akamai token -> %s", resolved[:120])
+            return resolved
+    return None
+
+
+async def resolve_live_manifest_url(
+    settings: Settings,
+    *,
+    manifest_path: str,
+    ls_session: str,
+    channel_tag: Optional[str] = None,
+    streaming_filter: Optional[str] = None,
+    dstv_client: Any = None,
+    user_access_token: Optional[str] = None,
+) -> str:
+    """Turn an unsigned live path into a fetchable Akamai-signed MPD URL."""
+    if manifest_path.startswith("http") and is_signed_manifest_url(manifest_path):
+        return manifest_path
+
+    jwt_manifest = _manifest_from_session_jwt(ls_session)
+    if jwt_manifest:
+        return jwt_manifest
+
+    gtm_manifest = await _probe_gtm_manifest_urls(
+        settings,
+        manifest_path=manifest_path,
+        ls_session=ls_session,
+        channel_tag=channel_tag,
+        streaming_filter=streaming_filter,
+    )
+    if gtm_manifest:
+        return gtm_manifest
+
+    if dstv_client is not None and user_access_token:
+        try:
+            api_manifest = await dstv_client.request_live_playback_manifest(
+                channel_tag=channel_tag or "",
+                ls_session=ls_session,
+                manifest_path=_normalize_manifest_path(manifest_path),
+                user_access_token=user_access_token,
+                streaming_filter=streaming_filter,
+            )
+            if api_manifest:
+                if is_signed_manifest_url(api_manifest):
+                    return api_manifest
+                token_manifest = await _probe_signed_token_urls(
+                    settings,
+                    token=api_manifest,
+                    manifest_path=manifest_path,
+                    ls_session=ls_session,
+                    streaming_filter=streaming_filter,
+                )
+                if token_manifest:
+                    return token_manifest
+                return api_manifest
+        except Exception as exc:
+            logger.warning("DStv playback manifest API failed for %s: %s", channel_tag, exc)
+
+        try:
+            api_token = await dstv_client.request_live_stream_token(
+                channel_tag=channel_tag or "",
+                ls_session=ls_session,
+                manifest_path=_normalize_manifest_path(manifest_path),
+                user_access_token=user_access_token,
+                streaming_filter=streaming_filter,
+            )
+            if api_token:
+                token_manifest = await _probe_signed_token_urls(
+                    settings,
+                    token=api_token,
+                    manifest_path=manifest_path,
+                    ls_session=ls_session,
+                    streaming_filter=streaming_filter,
+                )
+                if token_manifest:
+                    return token_manifest
+        except Exception as exc:
+            logger.warning("DStv stream token API failed for %s: %s", channel_tag, exc)
+
     raise ValueError(
-        f"Could not resolve signed live manifest for {channel_tag or path}. "
-        "Ensure a fresh Irdeto session is imported from dstv.stream."
+        f"Could not resolve signed live manifest for {channel_tag or manifest_path}. "
+        "Play the channel on dstv.stream and sync a fresh session via the tracker extension."
     )
 
 
@@ -140,19 +393,32 @@ async def ensure_fetchable_manifest_url(
     content_type: str,
     channel_tag: Optional[str] = None,
     streaming_filter: Optional[str] = None,
+    dstv_client: Any = None,
+    user_access_token: Optional[str] = None,
 ) -> str:
     if manifest_url.startswith("http") and is_signed_manifest_url(manifest_url):
         return manifest_url
 
-    if content_type == "live" or (
-        not manifest_url.startswith("http") and channel_tag
-    ):
+    if content_type in {"live", "streaming"} and channel_tag:
         return await resolve_live_manifest_url(
             settings,
             manifest_path=manifest_url,
             ls_session=ls_session,
             channel_tag=channel_tag,
             streaming_filter=streaming_filter,
+            dstv_client=dstv_client,
+            user_access_token=user_access_token,
+        )
+
+    if content_type == "live" or (not manifest_url.startswith("http") and channel_tag):
+        return await resolve_live_manifest_url(
+            settings,
+            manifest_path=manifest_url,
+            ls_session=ls_session,
+            channel_tag=channel_tag,
+            streaming_filter=streaming_filter,
+            dstv_client=dstv_client,
+            user_access_token=user_access_token,
         )
 
     return manifest_url

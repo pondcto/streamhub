@@ -69,6 +69,10 @@ class DStvClient:
         "tvshows": "/api/dstv_now/pages/v2/vod_sections/tv_shows",
         "kids": "/api/dstv_now/pages/v2/vod_sections/kids",
     }
+    LIVE_CHANNELS_PATH = (
+        "/api/cs-mobile/v7/epg-service/channels/events"
+        ";genre=ALL;country={country};packageId={package_id};count=2"
+    )
     ENTITLEMENT_SESSION_PATH = "/api/vod-auth/entitlement/session"
     VOD_VIDEO_META_PATH = "/api/dstv_now/vod/granular_catalogue/videos/{video_id}"
     VOD_SEASON_PATH = (
@@ -461,6 +465,20 @@ class DStvClient:
             header_profile=PAGES_HEADER_PROFILE,
         )
 
+    async def get_live_channels(self) -> Any:
+        path = self.LIVE_CHANNELS_PATH.format(
+            country=self.settings.dstv_country_code,
+            package_id=self.settings.dstv_package_id,
+        )
+        params = {"platformId": self.settings.dstv_platform_id}
+        return await self._request(
+            "GET",
+            path,
+            params=params,
+            user_access_token=self._catalog_bearer_token(),
+            cookie=self._catalog_cookie(),
+        )
+
     async def get_epg_channel(self, channel_id: str) -> Any:
         path = f"/api/cs-mobile/epg/v7/getEpgChannel;channelId={channel_id};platformId={self.settings.dstv_platform_id}"
         return await self._request("GET", path)
@@ -488,7 +506,10 @@ class DStvClient:
         if channel_tag:
             payload["channelTag"] = channel_tag
         if manifest_hint:
-            payload["manifestUrl"] = manifest_hint
+            if str(manifest_hint).startswith("http"):
+                payload["manifestUrl"] = manifest_hint
+            else:
+                payload["manifestPath"] = str(manifest_hint).strip()
 
         bearer = normalize_bearer_token(user_access_token) or self._catalog_bearer_token()
         cookie = self._catalog_cookie()
@@ -526,6 +547,162 @@ class DStvClient:
         if last_error:
             raise last_error
         raise DStvAPIError("Entitlement request failed", status_code=502)
+
+    async def find_live_channel_manifest_path(self, channel_tag: str) -> Optional[str]:
+        from app.services.live_manifest import manifest_hint_from_player_url
+
+        needle = channel_tag.strip().upper()
+        try:
+            raw = await self.get_live_channels()
+        except DStvAPIError as exc:
+            logger.warning("Live channel lookup failed for %s: %s", channel_tag, exc.detail or str(exc))
+            return None
+
+        items: List[Any] = []
+        if isinstance(raw, list):
+            items = raw
+        elif isinstance(raw, dict):
+            for key in ("items", "channels", "events", "results", "channelEvents"):
+                val = raw.get(key)
+                if isinstance(val, list):
+                    items = val
+                    break
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            channel = item.get("channel") if isinstance(item.get("channel"), dict) else {}
+            tag = str(
+                item.get("channelAlias")
+                or item.get("channelTag")
+                or channel.get("id")
+                or ""
+            ).upper()
+            if tag != needle:
+                continue
+            streams = item.get("streams") if isinstance(item.get("streams"), list) else []
+            for stream in streams:
+                if not isinstance(stream, dict):
+                    continue
+                hint = manifest_hint_from_player_url(stream.get("playerUrl"))
+                if hint:
+                    return hint
+        return None
+
+    async def request_live_playback_manifest(
+        self,
+        *,
+        channel_tag: str,
+        ls_session: str,
+        manifest_path: str,
+        user_access_token: str,
+        streaming_filter: Optional[str] = None,
+    ) -> Optional[str]:
+        from app.services.live_manifest import (
+            DEFAULT_LIVE_STREAMING_FILTER,
+            PLAYBACK_MANIFEST_PATHS,
+            _extract_manifest_url,
+        )
+
+        payload: Dict[str, Any] = {
+            "channelTag": channel_tag,
+            "contentId": channel_tag,
+            "contentType": "streaming",
+            "platformId": self.settings.dstv_platform_id,
+            "countryCode": self.settings.dstv_country_code,
+            "packageId": self.settings.dstv_package_id,
+            "session": ls_session,
+            "ls_session": ls_session,
+            "manifestPath": manifest_path,
+        }
+        filter_value = streaming_filter or DEFAULT_LIVE_STREAMING_FILTER
+        payload["streamingFilter"] = filter_value
+        payload["ucp_filter"] = filter_value
+        payload["streaming_filter"] = filter_value
+
+        for path in PLAYBACK_MANIFEST_PATHS:
+            if not path.endswith("/manifest") and not path.endswith("/playback"):
+                continue
+            try:
+                data = await self._request_with_profile(
+                    "POST",
+                    path,
+                    json_body=payload,
+                    user_access_token=user_access_token,
+                    cookie=self._catalog_cookie(),
+                    header_profile=ENTITLEMENT_HEADER_PROFILE,
+                    retry=False,
+                )
+            except DStvAPIError as exc:
+                logger.debug("Playback manifest POST %s failed: %s", path, exc.status_code)
+                continue
+
+            manifest = _extract_manifest_url(data)
+            if manifest:
+                logger.info("Resolved live manifest for %s via %s", channel_tag, path)
+                return manifest
+
+        return None
+
+    async def request_live_stream_token(
+        self,
+        *,
+        channel_tag: str,
+        ls_session: str,
+        manifest_path: str,
+        user_access_token: str,
+        streaming_filter: Optional[str] = None,
+    ) -> Optional[str]:
+        from app.services.live_manifest import (
+            DEFAULT_LIVE_STREAMING_FILTER,
+            PLAYBACK_MANIFEST_PATHS,
+            _extract_akamai_token,
+            _extract_manifest_url,
+        )
+
+        payload: Dict[str, Any] = {
+            "channelTag": channel_tag,
+            "contentId": channel_tag,
+            "contentType": "streaming",
+            "platformId": self.settings.dstv_platform_id,
+            "countryCode": self.settings.dstv_country_code,
+            "packageId": self.settings.dstv_package_id,
+            "session": ls_session,
+            "ls_session": ls_session,
+            "manifestPath": manifest_path,
+        }
+        filter_value = streaming_filter or DEFAULT_LIVE_STREAMING_FILTER
+        payload["streamingFilter"] = filter_value
+        payload["ucp_filter"] = filter_value
+        payload["streaming_filter"] = filter_value
+
+        for path in PLAYBACK_MANIFEST_PATHS:
+            if not path.endswith("/token"):
+                continue
+            try:
+                data = await self._request_with_profile(
+                    "POST",
+                    path,
+                    json_body=payload,
+                    user_access_token=user_access_token,
+                    cookie=self._catalog_cookie(),
+                    header_profile=ENTITLEMENT_HEADER_PROFILE,
+                    retry=False,
+                )
+            except DStvAPIError as exc:
+                logger.debug("Stream token POST %s failed: %s", path, exc.status_code)
+                continue
+
+            token = _extract_akamai_token(data)
+            if token:
+                logger.info("Resolved Akamai token for %s via %s", channel_tag, path)
+                return token
+
+            manifest = _extract_manifest_url(data)
+            if manifest and ("hmac=" in manifest or "hdntl=" in manifest):
+                return manifest
+
+        return None
 
     def build_license_url(
         self,

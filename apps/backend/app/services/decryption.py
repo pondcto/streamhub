@@ -5,7 +5,7 @@ from typing import Optional
 
 from app.config import Settings, get_settings
 from app.models.decryption import ContentKey, DecryptionKeysResponse
-from app.services.auth import get_irdeto_session, parse_session_info
+from app.services.auth import get_effective_access_token, get_irdeto_session, parse_session_info
 from app.services.dstv_client import DStvAPIError, DStvClient, is_expired
 from app.services.entitlement import EntitlementError
 from app.services.entitlement_response import parse_entitlement_response
@@ -39,9 +39,17 @@ class DecryptionService:
             )
 
         manual_session = get_irdeto_session()
+        resolved_manifest_url = manifest_url
+        effective_access_token = user_access_token or get_effective_access_token()
 
-        # Prefer browser-captured Irdeto session for VOD/streaming (live needs entitlement filter).
-        if manual_session and manifest_url and content_type != "live":
+        if channel_tag and not manifest_url.startswith("http"):
+            async with DStvClient(self.settings) as lookup_client:
+                epg_path = await lookup_client.find_live_channel_manifest_path(channel_tag)
+                if epg_path:
+                    resolved_manifest_url = epg_path
+
+        # Prefer browser-captured Irdeto session for VOD highlights (live linear needs entitlement).
+        if manual_session and resolved_manifest_url and not channel_tag:
             logger.info(
                 "Using saved Irdeto session for content %s (skipping entitlement API)",
                 content_id,
@@ -49,20 +57,20 @@ class DecryptionService:
             return await self._generate_keys_with_manual_session(
                 content_id=content_id,
                 content_type=content_type,
-                manifest_url=manifest_url,
+                manifest_url=resolved_manifest_url,
                 ls_session=manual_session,
                 channel_tag=channel_tag,
             )
 
-        if user_access_token:
+        if effective_access_token:
             async with DStvClient(self.settings) as client:
                 try:
                     entitlement_data = await client.request_entitlement_session(
-                        content_id=content_id,
+                        content_id=channel_tag or content_id,
                         content_type=content_type,
-                        user_access_token=user_access_token,
+                        user_access_token=effective_access_token,
                         channel_tag=channel_tag,
-                        manifest_hint=manifest_url,
+                        manifest_hint=resolved_manifest_url,
                     )
                 except DStvAPIError as exc:
                     if manual_session:
@@ -73,7 +81,7 @@ class DecryptionService:
                         return await self._generate_keys_with_manual_session(
                             content_id=content_id,
                             content_type=content_type,
-                            manifest_url=manifest_url,
+                            manifest_url=resolved_manifest_url,
                             ls_session=manual_session,
                             channel_tag=channel_tag,
                         )
@@ -92,8 +100,8 @@ class DecryptionService:
                 resolved_manifest, ls_session, expires_at, drm_content_id, streaming_filter = (
                     parse_entitlement_response(
                         entitlement_data,
-                        content_id,
-                        manifest_url,
+                        channel_tag or content_id,
+                        resolved_manifest_url,
                         self.settings,
                     )
                 )
@@ -107,7 +115,7 @@ class DecryptionService:
                         return await self._generate_keys_with_manual_session(
                             content_id=content_id,
                             content_type=content_type,
-                            manifest_url=manifest_url,
+                            manifest_url=resolved_manifest_url,
                             ls_session=manual_session,
                             channel_tag=channel_tag,
                         )
@@ -127,13 +135,14 @@ class DecryptionService:
                 return await self._generate_keys_with_session(
                     content_id=content_id,
                     content_type=content_type,
-                    manifest_url=resolved_manifest or manifest_url,
+                    manifest_url=resolved_manifest or resolved_manifest_url,
                     ls_session=ls_session,
                     expires_at=expires_at,
                     drm_content_id=drm_content_id or channel_tag or content_id,
                     streaming_filter=streaming_filter,
                     channel_tag=channel_tag,
                     client=client,
+                    user_access_token=effective_access_token,
                 )
 
         if manual_session:
@@ -141,9 +150,10 @@ class DecryptionService:
             return await self._generate_keys_with_manual_session(
                 content_id=content_id,
                 content_type=content_type,
-                manifest_url=manifest_url,
+                manifest_url=resolved_manifest_url,
                 ls_session=manual_session,
                 channel_tag=channel_tag,
+                user_access_token=effective_access_token,
             )
 
         raise EntitlementError(
@@ -160,6 +170,7 @@ class DecryptionService:
         manifest_url: str,
         ls_session: str,
         channel_tag: Optional[str] = None,
+        user_access_token: Optional[str] = None,
     ) -> DecryptionKeysResponse:
         expires_at = parse_session_info(ls_session).expires_at or datetime.now(timezone.utc)
         if is_expired(expires_at):
@@ -168,6 +179,21 @@ class DecryptionService:
                 status_code=403,
                 code="SESSION_EXPIRED",
             )
+        if channel_tag and user_access_token:
+            async with DStvClient(self.settings) as client:
+                return await self._generate_keys_with_session(
+                    content_id=content_id,
+                    content_type=content_type,
+                    manifest_url=manifest_url,
+                    ls_session=ls_session,
+                    expires_at=expires_at,
+                    drm_content_id=channel_tag or content_id,
+                    streaming_filter=None,
+                    channel_tag=channel_tag,
+                    client=client,
+                    user_access_token=user_access_token,
+                )
+
         return await self._generate_keys_with_session(
             content_id=content_id,
             content_type=content_type,
@@ -177,6 +203,7 @@ class DecryptionService:
             drm_content_id=channel_tag or content_id,
             streaming_filter=None,
             channel_tag=channel_tag,
+            user_access_token=user_access_token,
         )
 
     async def _generate_keys_with_session(
@@ -191,6 +218,7 @@ class DecryptionService:
         streaming_filter: Optional[str],
         channel_tag: Optional[str] = None,
         client: Optional[DStvClient] = None,
+        user_access_token: Optional[str] = None,
     ) -> DecryptionKeysResponse:
         if is_expired(expires_at):
             raise EntitlementError(
@@ -207,6 +235,8 @@ class DecryptionService:
                 content_type=content_type,
                 channel_tag=channel_tag,
                 streaming_filter=streaming_filter,
+                dstv_client=client,
+                user_access_token=user_access_token,
             )
         except ValueError as exc:
             raise EntitlementError(

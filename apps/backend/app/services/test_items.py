@@ -32,7 +32,7 @@ def find_test_item(item_id: str) -> Optional[TestItemSpec]:
 TEST_ITEMS: tuple[TestItemSpec, ...] = (
     TestItemSpec(
         id="TS2",
-        content_type="live",
+        content_type="streaming",
         channel_tag="TS2",
         manifest_hint="USL02/TS2/TS2.isml/.mpd",
         title="TS2 Live",

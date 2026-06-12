@@ -12,7 +12,7 @@ export const TEST_VIDEOS: ContentItem[] = [
     title: "TS2 Live",
     category: "Sport",
     subtitle: "Live linear channel (576p mobile filter).",
-    contentType: "live",
+    contentType: "streaming",
     channelTag: "TS2",
     manifestHint: "USL02/TS2/TS2.isml/.mpd",
   },
