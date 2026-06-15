@@ -25,6 +25,12 @@ dist/
 build/
 
 
+# Environment / secrets (never commit) — keep *.env.example tracked
+.env
+.env.*
+!.env.example
+!*.env.example
+
 # Runtime session state (JWTs, tokens — never commit)
 .streamhub_session.json
 .streamhub_test_keys.json

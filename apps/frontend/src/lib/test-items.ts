@@ -1,41 +1,95 @@
 import type { ContentItem, TestVideoCard } from "./types";
 
 export const TEST_VIDEO_IDS = {
+  SH4_LIVE: "SH4",
+  SH2_LIVE: "SH2",
   TS2_LIVE: "TS2",
-  CHANNEL_33B: "33B",
-  CHD_LIVE: "CHD",
+  A11_LIVE: "A11",
+  HD9_LIVE: "9HD",
+  H12_LIVE: "12H",
+  E1W_LIVE: "E1W",
+  SDN_LIVE: "SDN",
   BELGIUM_TUNISIA: "SS127028_SOC060626WCFBELVTUNHD10_SUN",
 } as const;
 
-/** Canonical test tab catalog — keep in sync with apps/backend/app/services/test_items.py */
-export const TEST_VIDEOS: ContentItem[] = [
+type LiveChannelDef = {
+  id: string;
+  title: string;
+  channelTag: string;
+  manifestHint: string;
+  cdnHost: string;
+};
+
+const LIVE_CHANNELS: LiveChannelDef[] = [
+  {
+    id: TEST_VIDEO_IDS.SH4_LIVE,
+    title: "201 Live",
+    channelTag: "SH4",
+    manifestHint: "USL07/SH4/SH4.isml/.mpd",
+    cdnHost: "i-live-cache.akamaized.net",
+  },
+  {
+    id: TEST_VIDEO_IDS.SH2_LIVE,
+    title: "202 Live",
+    channelTag: "SH2",
+    manifestHint: "USL04/SH2/SH2.isml/.mpd",
+    cdnHost: "i-live-cache.akamaized.net",
+  },
   {
     id: TEST_VIDEO_IDS.TS2_LIVE,
-    title: "TS2 Live",
-    category: "Sport",
-    subtitle: "Akamai hdntl manifest (i-live-cache.akamaized.net).",
-    contentType: "streaming",
+    title: "203 Live",
     channelTag: "TS2",
     manifestHint: "USL02/TS2/TS2.isml/.mpd",
+    cdnHost: "i-live-cache.akamaized.net",
   },
   {
-    id: TEST_VIDEO_IDS.CHANNEL_33B,
-    title: "33B Live",
-    category: "Sport",
-    subtitle: "GTM __token__ manifest (i-live-gtm.dstv.com, USL05).",
-    contentType: "streaming",
-    channelTag: "33B",
-    manifestHint: "USL05/33B/33B.isml/.mpd",
+    id: TEST_VIDEO_IDS.A11_LIVE,
+    title: "211 Live",
+    channelTag: "A11",
+    manifestHint: "USL08/A11/A11.isml/.mpd",
+    cdnHost: "i-live-cache.akamaized.net",
   },
   {
-    id: TEST_VIDEO_IDS.CHD_LIVE,
-    title: "CHD Live",
-    category: "Sport",
-    subtitle: "GTM __token__ manifest (i-live-gtm.dstv.com, USL06).",
-    contentType: "streaming",
-    channelTag: "CHD",
-    manifestHint: "USL06/CHD/CHD.isml/.mpd",
+    id: TEST_VIDEO_IDS.HD9_LIVE,
+    title: "209 Live",
+    channelTag: "9HD",
+    manifestHint: "USL03/9HD/9HD.isml/.mpd",
+    cdnHost: "r-live-cache.akamaized.net",
   },
+  {
+    id: TEST_VIDEO_IDS.H12_LIVE,
+    title: "212 Live",
+    channelTag: "12H",
+    manifestHint: "USL03/12H/12H.isml/.mpd",
+    cdnHost: "r-live-cache.akamaized.net",
+  },
+  {
+    id: TEST_VIDEO_IDS.E1W_LIVE,
+    title: "218 Live",
+    channelTag: "E1W",
+    manifestHint: "USL06/E1W/E1W.isml/.mpd",
+    cdnHost: "r-live-cache.akamaized.net",
+  },
+  {
+    id: TEST_VIDEO_IDS.SDN_LIVE,
+    title: "219 Live",
+    channelTag: "SDN",
+    manifestHint: "USL05/SDN/SDN.isml/.mpd",
+    cdnHost: "r-live-cache.akamaized.net",
+  },
+];
+
+/** Canonical test tab catalog — keep in sync with apps/backend/app/services/test_items.py */
+export const TEST_VIDEOS: ContentItem[] = [
+  ...LIVE_CHANNELS.map((channel) => ({
+    id: channel.id,
+    title: channel.title,
+    category: "Live",
+    subtitle: `Akamai hdntl (${channel.cdnHost}) · ${channel.channelTag}`,
+    contentType: "streaming" as const,
+    channelTag: channel.channelTag,
+    manifestHint: channel.manifestHint,
+  })),
   {
     id: TEST_VIDEO_IDS.BELGIUM_TUNISIA,
     title: "Belgium v Tunisia",

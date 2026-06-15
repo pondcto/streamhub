@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     dstv_license_base_url: str = "https://licensev2.dstv.com"
     dstv_live_gtm_base_url: str = "https://i-live-gtm.dstv.com"
     dstv_live_cdn_base_url: str = "https://i-live-cache.akamaized.net"
+    dstv_live_cdn_alt_base_url: str = "https://r-live-cache.akamaized.net"
     dstv_platform_id: str = "32faad53-5e7b-4cc0-9f33-000092e85950"
     dstv_country_code: str = "ZA"
     dstv_package_id: str = "PREMIUM"

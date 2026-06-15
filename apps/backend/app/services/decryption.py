@@ -12,7 +12,11 @@ from app.services.auth import (
     parse_session_info,
     set_stored_live_manifest_url,
 )
-from app.services.live_manifest import is_signed_manifest_url, live_manifest_cdn_type
+from app.services.live_manifest import (
+    akamai_manifest_host,
+    is_signed_manifest_url,
+    live_manifest_cdn_type,
+)
 from app.services.test_items import find_test_item_by_channel_tag
 from app.services.dstv_client import DStvAPIError, DStvClient, is_expired
 from app.services.entitlement import EntitlementError
@@ -83,6 +87,16 @@ class DecryptionService:
                         status_code=502,
                         code="LIVE_MANIFEST_CDN_MISMATCH",
                     )
+                if spec and spec.live_cdn_host:
+                    url_host = akamai_manifest_host(signed_manifest)
+                    if url_host and url_host != spec.live_cdn_host.strip().lower():
+                        raise EntitlementError(
+                            f"Stored manifest for {channel_tag} is from {url_host} but "
+                            f"{spec.live_cdn_host} is required. Play the channel on dstv.stream "
+                            "and capture a fresh live_manifest_url.",
+                            status_code=502,
+                            code="LIVE_MANIFEST_CDN_MISMATCH",
+                        )
                 logger.info(
                     "Using browser-captured signed manifest for live channel %s (%s CDN)",
                     channel_tag,

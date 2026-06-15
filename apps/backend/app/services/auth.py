@@ -372,7 +372,9 @@ def capture_live_manifest_urls(
     request_url: Optional[str] = None,
     source_url: Optional[str] = None,
 ) -> None:
+    from app.services.cdn_proxy import ensure_akamai_playback_manifest_url
     from app.services.live_manifest import (
+        akamai_manifest_host,
         channel_tag_from_signed_manifest_url,
         is_signed_manifest_url,
         live_manifest_cdn_type,
@@ -406,7 +408,19 @@ def capture_live_manifest_urls(
             )
             continue
 
-        set_stored_live_manifest_url(tag, value)
+        if spec and spec.live_cdn_host:
+            url_host = akamai_manifest_host(value)
+            if url_host and url_host != spec.live_cdn_host.strip().lower():
+                logger.warning(
+                    "Ignoring manifest from %s for channel %s (expected host %s).",
+                    url_host,
+                    tag,
+                    spec.live_cdn_host,
+                )
+                continue
+
+        stored_url = ensure_akamai_playback_manifest_url(value)
+        set_stored_live_manifest_url(tag, stored_url)
         if cdn_type:
             logger.info("Stored %s live manifest URL for channel %s.", cdn_type, tag)
         return

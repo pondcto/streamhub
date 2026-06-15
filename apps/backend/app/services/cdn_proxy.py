@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 _ALLOWED_CDN_HOSTS = frozenset(
     {
         "i-live-cache.akamaized.net",
+        "r-live-cache.akamaized.net",
         "i-live-gtm.dstv.com",
         "v1.dstv.com",
         "dstv.stream",

@@ -51,15 +51,38 @@ def channel_tag_from_signed_manifest_url(url: str) -> Optional[str]:
     return None
 
 
+AKAMAI_LIVE_CACHE_HOSTS = frozenset(
+    {
+        "i-live-cache.akamaized.net",
+        "r-live-cache.akamaized.net",
+    }
+)
+
+
+def is_akamai_live_cache_host(hostname: str) -> bool:
+    host = (hostname or "").strip().lower()
+    if not host:
+        return False
+    if host in AKAMAI_LIVE_CACHE_HOSTS:
+        return True
+    return host.endswith(".akamaized.net") and "-live-cache" in host
+
+
+def akamai_manifest_host(url: str) -> Optional[str]:
+    if not is_akamai_hdntl_manifest_url(url):
+        return None
+    return (urlparse(url).hostname or "").lower() or None
+
+
 def is_akamai_hdntl_manifest_url(url: str) -> bool:
-    """Akamai live MPD with path-style hdntl token (e.g. TS2 on i-live-cache.akamaized.net)."""
-    lowered = url.lower()
-    if "i-live-cache.akamaized.net" not in lowered:
+    """Akamai live MPD with path-style hdntl token (i-live-cache or r-live-cache)."""
+    host = (urlparse(url).hostname or "").lower()
+    if not is_akamai_live_cache_host(host):
         return False
     path = urlparse(url).path.lower()
     if not (path.startswith("/hdntl=") or "/hdntl=" in path):
         return False
-    # Unsigned or query-param hdnts URLs are not the playable signed manifest.
+    lowered = url.lower()
     return "hdnts=" not in lowered.split("?", 1)[-1]
 
 
@@ -412,7 +435,7 @@ async def resolve_live_manifest_url(
     raise ValueError(
         f"Could not resolve signed live manifest for {channel_tag or manifest_path}. "
         "Play the channel on dstv.stream so the session tracker captures live_manifest_url "
-        "(Akamai hdntl for channels like TS2, or GTM __token__ for channels like 33B/CHD)."
+        "(Akamai hdntl on i-live-cache or r-live-cache.akamaized.net)."
     )
 
 

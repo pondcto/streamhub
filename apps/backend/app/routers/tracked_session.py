@@ -20,14 +20,13 @@ from app.services.live_manifest import (
     is_signed_manifest_url,
     live_manifest_cdn_type,
 )
-from app.services.test_items import find_test_item_by_channel_tag
+from app.services.test_items import TEST_ITEMS, find_test_item_by_channel_tag
 from app.services.cache import metadata_cache
 from app.services.stored_test_keys import (
     build_test_key_status,
     get_store_updated_at,
     refresh_all_test_keys,
 )
-from app.services.test_items import TEST_ITEMS
 
 logger = logging.getLogger(__name__)
 
@@ -174,11 +173,15 @@ async def ingest_tracked_session(payload: TrackedSessionRequest) -> TrackedSessi
     keys_updated_at = get_store_updated_at()
 
     ok_count = sum(1 for item in test_keys if item.status == "ok")
-    ts2_status = next((item for item in test_keys if item.item_id == "TS2"), None)
-    if ts2_status and ts2_status.status != "ok":
+    live_ids = {spec.id for spec in TEST_ITEMS if spec.channel_tag}
+    failed_live = [
+        item for item in test_keys if item.status != "ok" and item.item_id in live_ids
+    ]
+    for item in failed_live:
         logger.warning(
-            "TS2 key refresh failed: %s (live_manifest_url required from session tracker)",
-            ts2_status.message or ts2_status.status,
+            "Live key refresh failed for %s: %s",
+            item.item_id,
+            item.message or item.status,
         )
     logger.info(
         "Tracked session applied (connect %ss, irdeto %ss). Test keys: %s/%s ok.",
