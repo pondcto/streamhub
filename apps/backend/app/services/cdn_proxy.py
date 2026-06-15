@@ -45,6 +45,19 @@ def build_cdn_proxy_url(api_base: str, target_url: str) -> str:
     return f"{base}/api/playback/cdn?url={quote(target_url, safe='')}"
 
 
+def ensure_akamai_playback_manifest_url(url: str) -> str:
+    """Return the live manifest URL to persist for playback.
+
+    The original helper was lost in commit 9eb058a — the same commit that
+    accidentally deleted much of the backend — and was never committed
+    anywhere, so it cannot be recovered from history. This restores the prior
+    known-good behaviour of storing the signed manifest URL unchanged, which
+    keeps the caller's host-validation guard intact. Reintroduce any
+    Akamai-specific normalisation here if a transform is actually required.
+    """
+    return url
+
+
 async def fetch_cdn_resource(settings: Settings, url: str) -> tuple[bytes, str]:
     if not is_proxied_cdn_url(url):
         raise CdnProxyError("URL host is not allowed for CDN proxy.", status_code=400)
