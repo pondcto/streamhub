@@ -44,7 +44,11 @@ async def get_test_videos() -> TestVideosResponse:
 
     async with DStvClient(settings) as client:
         for spec in TEST_ITEMS:
-            if spec.content_type == "live":
+            # Live linear channels (akamai/gtm) have no VOD granular-catalogue
+            # entry, so probing /vod/.../videos/<tag> always 404s. Skip straight
+            # to the fallback card — the same result, without the wasted calls
+            # and log noise.
+            if spec.content_type == "live" or spec.live_manifest_cdn is not None:
                 items.append(_fallback_test_card(spec))
                 continue
 
