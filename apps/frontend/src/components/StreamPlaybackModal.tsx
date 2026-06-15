@@ -95,6 +95,11 @@ export default function StreamPlaybackModal({
     ? new Date(sessionExpiresAt).toLocaleString()
     : null;
 
+  const streamId = (channelTag ?? "").trim();
+  const command =
+    "ulimit -n 65535 && make wv-mpd-streaming && " +
+    `./bin/wv-mpd-streaming "${manifestUrl}"${streamId ? ` ${streamId}` : ""} live`;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
@@ -147,6 +152,11 @@ export default function StreamPlaybackModal({
             label="License server URL"
             hint="Widevine license endpoint (ContentId + ls_session)"
             value={licenseUrl}
+          />
+          <CopyField
+            label="Command"
+            hint="Run from the wv-mpd-streaming project root"
+            value={command}
           />
         </div>
 
