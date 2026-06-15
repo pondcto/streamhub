@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { copyText } from "@/lib/clipboard";
+
 interface StreamPlaybackModalProps {
   open: boolean;
   onClose: () => void;
@@ -24,12 +26,9 @@ function CopyField({
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
+    if (await copyText(value)) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // ignore
     }
   };
 
@@ -96,9 +95,11 @@ export default function StreamPlaybackModal({
     : null;
 
   const streamId = (channelTag ?? "").trim();
+  // wv-mpd-streaming wants the bare .mpd URL — strip the ?ssai=...&filter=... query
+  const baseManifestUrl = manifestUrl.split("?")[0];
   const command =
     "ulimit -n 65535 && make wv-mpd-streaming && " +
-    `./bin/wv-mpd-streaming "${manifestUrl}"${streamId ? ` ${streamId}` : ""} live`;
+    `./bin/wv-mpd-streaming "${baseManifestUrl}"${streamId ? ` ${streamId}` : ""} live`;
 
   return (
     <div

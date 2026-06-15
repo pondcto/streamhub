@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { DecryptionKeysResponse } from "@/lib/types";
+import { copyText } from "@/lib/clipboard";
 
 interface DecryptionKeysPanelProps {
   data: DecryptionKeysResponse;
@@ -19,12 +20,9 @@ function CopyField({
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
+    if (await copyText(value)) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // ignore
     }
   };
 
