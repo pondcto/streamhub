@@ -120,9 +120,11 @@ export default function VideoPlayer({ playback, contentTitle }: VideoPlayerProps
     }
 
     try {
+      // shaka-player's shipped types don't structurally match our local
+      // ShakaModule shape, so cast through `unknown` (TS2352).
       const shakaModule = (await import(
         "shaka-player/dist/shaka-player.compiled.js"
-      )) as ShakaModule;
+      )) as unknown as ShakaModule;
       const shaka = shakaModule.default;
       shaka.polyfill.installAll();
 
