@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import RequireAuth from "@/components/RequireAuth";
+import SchedulesSection from "@/components/SchedulesSection";
 import { fetchLogs, listChannels, startChannel, stopChannel } from "@/lib/admin-api";
 import type { AdminChannel } from "@/lib/types";
 
@@ -204,6 +205,8 @@ function AdminContent() {
           </pre>
         </div>
       )}
+
+      <SchedulesSection channels={channels} />
     </div>
   );
 }

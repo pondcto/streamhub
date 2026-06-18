@@ -24,7 +24,7 @@ SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSe
 async def init_db() -> None:
     """Create tables for all registered models. Safe to call on every startup."""
     # Import models so they register on Base.metadata before create_all.
-    from app.models import user  # noqa: F401
+    from app.models import schedule, user  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

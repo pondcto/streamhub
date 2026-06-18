@@ -212,3 +212,13 @@ export interface LogChunk {
   offset: number;
   running: boolean;
 }
+
+export interface Schedule {
+  id: number;
+  contentId: string;
+  startTime: string; // "HH:MM"
+  endTime: string;
+  daysOfWeek: string; // "*", "mon-fri", "mon,wed,fri"
+  enabled: boolean;
+  createdAt: string;
+}

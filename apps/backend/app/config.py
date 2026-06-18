@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     hls_logs_dir: str = "/tmp/hls/logs"
     hls_ready_timeout_seconds: float = 30.0
 
+    # Timezone for playback schedules (cron triggers).
+    scheduler_timezone: str = "Africa/Johannesburg"
+
     cache_ttl_navigation: int = 300
     cache_ttl_catalog: int = 120
 

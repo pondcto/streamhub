@@ -19,11 +19,12 @@ from app.routers import (
     health,
     navigation,
     playback,
+    schedules,
     stream,
     test_videos,
     tracked_session,
 )
-from app.services import controller
+from app.services import controller, scheduler
 from app.services.accounts import seed_admin
 from app.services.auth import initialize_session
 from app.services.entitlement import EntitlementError
@@ -41,8 +42,10 @@ async def lifespan(app: FastAPI):
     await init_db()
     await seed_admin()
     initialize_session()
+    await scheduler.start_scheduler()
     logger.info("StreamHub backend started")
     yield
+    scheduler.shutdown_scheduler()
     controller.stop_all()  # terminate any running wv-mpd-streaming processes
     logger.info("StreamHub backend shutting down")
 
@@ -75,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(accounts.router)
     app.include_router(stream.router)
     app.include_router(admin.router)
+    app.include_router(schedules.router)
     app.include_router(tracked_session.router)
 
     # Serve the restreamer's HLS output (/tmp/hls/files) at /hls/<contentId>/...

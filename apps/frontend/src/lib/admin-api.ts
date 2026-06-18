@@ -1,5 +1,5 @@
 import { getStoredToken } from "./auth";
-import type { AdminChannel, LogChunk } from "./types";
+import type { AdminChannel, LogChunk, Schedule } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -44,4 +44,36 @@ export function fetchLogs(contentId: string, offset: number): Promise<LogChunk> 
   return authed(
     `/api/admin/channels/${encodeURIComponent(contentId)}/logs?offset=${offset}`
   );
+}
+
+export interface ScheduleInput {
+  contentId: string;
+  startTime: string;
+  endTime: string;
+  daysOfWeek: string;
+  enabled: boolean;
+}
+
+export function listSchedules(): Promise<Schedule[]> {
+  return authed("/api/admin/schedules");
+}
+
+export function createSchedule(body: ScheduleInput): Promise<Schedule> {
+  return authed("/api/admin/schedules", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateSchedule(id: number, body: Partial<ScheduleInput>): Promise<Schedule> {
+  return authed(`/api/admin/schedules/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteSchedule(id: number): Promise<{ id: number; deleted: boolean }> {
+  return authed(`/api/admin/schedules/${id}`, { method: "DELETE" });
 }
