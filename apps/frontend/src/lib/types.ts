@@ -184,3 +184,12 @@ export interface TokenResponse {
   token_type: string;
   user: Account;
 }
+
+export interface StreamInfo {
+  contentId: string;
+  channelTag?: string | null;
+  pid: number;
+  status: string; // "playing" | "starting"
+  hlsUrl: string;
+  startedAt: string;
+}

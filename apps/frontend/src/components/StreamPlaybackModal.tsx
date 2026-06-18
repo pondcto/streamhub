@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import HlsPlayer from "@/components/HlsPlayer";
 import { copyText } from "@/lib/clipboard";
+import { resolveHlsUrl, startStream, stopStream } from "@/lib/stream-api";
 
 interface StreamPlaybackModalProps {
   open: boolean;
@@ -12,6 +14,8 @@ interface StreamPlaybackModalProps {
   licenseUrl: string;
   sessionExpiresAt?: string;
   channelTag?: string;
+  contentId?: string;
+  contentType?: string;
 }
 
 function CopyField({
@@ -64,7 +68,15 @@ export default function StreamPlaybackModal({
   licenseUrl,
   sessionExpiresAt,
   channelTag,
+  contentId,
+  contentType = "live",
 }: StreamPlaybackModalProps) {
+  const [hlsUrl, setHlsUrl] = useState<string | null>(null);
+  const [streamState, setStreamState] = useState<"idle" | "starting" | "ready" | "error">(
+    "idle"
+  );
+  const [streamError, setStreamError] = useState<string | null>(null);
+
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -85,6 +97,33 @@ export default function StreamPlaybackModal({
       document.body.style.overflow = "";
     };
   }, [open, handleKeyDown]);
+
+  // Start the restream when the modal opens; stop it on close/unmount.
+  useEffect(() => {
+    if (!open || !contentId || !manifestUrl) {
+      return;
+    }
+    let cancelled = false;
+    setStreamState("starting");
+    setStreamError(null);
+    setHlsUrl(null);
+    // wv-mpd-streaming wants the bare .mpd (drop ?ssai=...&filter=...), same as the command.
+    startStream({ contentId, manifestUrl: manifestUrl.split("?")[0], contentType, channelTag })
+      .then((info) => {
+        if (cancelled) return;
+        setHlsUrl(resolveHlsUrl(info.hlsUrl));
+        setStreamState(info.status === "playing" ? "ready" : "starting");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setStreamError(err instanceof Error ? err.message : "Failed to start the stream.");
+        setStreamState("error");
+      });
+    return () => {
+      cancelled = true;
+      stopStream(contentId).catch(() => {});
+    };
+  }, [open, contentId, manifestUrl, contentType, channelTag]);
 
   if (!open) {
     return null;
@@ -144,6 +183,26 @@ export default function StreamPlaybackModal({
         </div>
 
         <div className="space-y-3 p-5">
+          {contentId && (
+            <div>
+              {hlsUrl ? (
+                <HlsPlayer src={hlsUrl} />
+              ) : (
+                <div className="flex aspect-video w-full items-center justify-center rounded-lg border border-white/10 bg-black text-sm text-gray-400">
+                  {streamState === "error"
+                    ? "Couldn't start the stream"
+                    : "Starting stream…"}
+                </div>
+              )}
+              {streamState === "starting" && hlsUrl && (
+                <p className="mt-1.5 text-[11px] text-gray-500">Buffering the first segments…</p>
+              )}
+              {streamError && (
+                <p className="mt-1.5 text-[11px] text-amber-300/90">{streamError}</p>
+              )}
+            </div>
+          )}
+
           <CopyField
             label="Manifest URL"
             hint="DASH MPD — use with your player or CDN proxy"

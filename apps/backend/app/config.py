@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     admin_email: str = ""
     admin_password: str = ""
 
+    # wv-mpd-streaming (dstv-widevine-decryption) restream integration.
+    # Set WV_STREAMING_BINARY to the built binary's absolute path on the server.
+    wv_streaming_binary: str = "../../dstv-widevine-decryption/bin/wv-mpd-streaming"
+    wv_device_id: str = ""
+    hls_output_dir: str = "/tmp/hls/files"
+    hls_logs_dir: str = "/tmp/hls/logs"
+    hls_ready_timeout_seconds: float = 30.0
+
     cache_ttl_navigation: int = 300
     cache_ttl_catalog: int = 120
 

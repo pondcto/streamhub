@@ -326,6 +326,10 @@ function DashboardContent() {
 
         channelTag={activeItem?.channelTag}
 
+        contentId={activeItem?.id}
+
+        contentType={activeItem?.contentType}
+
         manifestUrl={keysResult?.manifestUrl ?? ""}
 
         licenseUrl={keysResult?.licenseUrl ?? ""}

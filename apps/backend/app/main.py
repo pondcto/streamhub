@@ -1,9 +1,11 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.db import init_db
@@ -16,9 +18,11 @@ from app.routers import (
     health,
     navigation,
     playback,
+    stream,
     test_videos,
     tracked_session,
 )
+from app.services import controller
 from app.services.accounts import seed_admin
 from app.services.auth import initialize_session
 from app.services.entitlement import EntitlementError
@@ -38,6 +42,7 @@ async def lifespan(app: FastAPI):
     initialize_session()
     logger.info("StreamHub backend started")
     yield
+    controller.stop_all()  # terminate any running wv-mpd-streaming processes
     logger.info("StreamHub backend shutting down")
 
 
@@ -67,7 +72,16 @@ def create_app() -> FastAPI:
     app.include_router(decryption.router)
     app.include_router(auth_router.router)
     app.include_router(accounts.router)
+    app.include_router(stream.router)
     app.include_router(tracked_session.router)
+
+    # Serve the restreamer's HLS output (/tmp/hls/files) at /hls/<contentId>/...
+    os.makedirs(settings.hls_output_dir, exist_ok=True)
+    app.mount(
+        "/hls",
+        StaticFiles(directory=settings.hls_output_dir, check_dir=False),
+        name="hls",
+    )
 
     @app.exception_handler(EntitlementError)
     async def entitlement_error_handler(request: Request, exc: EntitlementError):
