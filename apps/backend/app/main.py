@@ -12,6 +12,7 @@ from app.db import init_db
 from app.middleware.logging import RedactingAccessLogMiddleware
 from app.routers import (
     accounts,
+    admin,
     auth_router,
     catalog,
     decryption,
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(accounts.router)
     app.include_router(stream.router)
+    app.include_router(admin.router)
     app.include_router(tracked_session.router)
 
     # Serve the restreamer's HLS output (/tmp/hls/files) at /hls/<contentId>/...

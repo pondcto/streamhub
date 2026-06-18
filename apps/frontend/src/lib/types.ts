@@ -193,3 +193,22 @@ export interface StreamInfo {
   hlsUrl: string;
   startedAt: string;
 }
+
+export interface AdminChannel {
+  contentId: string;
+  channelTag?: string | null;
+  title?: string | null;
+  category: string;
+  contentType: string;
+  hasManifest: boolean;
+  running: boolean;
+  pid?: number | null;
+  hlsUrl?: string | null;
+  startedAt?: string | null;
+}
+
+export interface LogChunk {
+  content: string;
+  offset: number;
+  running: boolean;
+}

@@ -183,3 +183,25 @@ def get_status(content_id: str) -> Optional[dict]:
 def stop_all() -> None:
     for cid in list(_processes.keys()):
         stop_channel(cid)
+
+
+def read_log_since(content_id: str, offset: int = 0) -> tuple[str, int]:
+    """Return new log text written after `offset` bytes, plus the new offset.
+
+    Resets to 0 if the file shrank (rotation/restart). Enables cheap polling
+    of a channel's wv-mpd-streaming log from the admin dashboard.
+    """
+    settings = get_settings()
+    path = Path(settings.hls_logs_dir) / f"{content_id}.log"
+    if not path.exists():
+        return "", 0
+    try:
+        size = path.stat().st_size
+        if offset < 0 or offset > size:
+            offset = 0
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            fh.seek(offset)
+            data = fh.read()
+        return data, size
+    except OSError:
+        return "", offset

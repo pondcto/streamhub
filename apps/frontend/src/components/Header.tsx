@@ -35,6 +35,14 @@ export default function Header() {
         <div className="ml-auto flex items-center gap-3">
           {!loading && user && (
             <>
+              {user.role === "admin" && (
+                <Link
+                  href="/admin"
+                  className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
+                >
+                  Admin
+                </Link>
+              )}
               <span className="hidden text-sm text-gray-300 sm:inline" title={user.email}>
                 {user.display_name || user.email}
               </span>
