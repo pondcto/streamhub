@@ -43,6 +43,10 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 
+dstv-widevine-decryption/
+session-track/
+showfer-controller-backend/
+
 # Logs
 *.log
 npm-debug.log*

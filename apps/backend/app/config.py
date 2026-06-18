@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
 
+    # App-user auth (JWT). Override jwt_secret_key in production via .env.
+    jwt_secret_key: str = "dev-secret-change-in-production"
+    jwt_access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
+    # Optional admin seed — set both in .env to create/promote an admin on startup.
+    admin_email: str = ""
+    admin_password: str = ""
+
     cache_ttl_navigation: int = 300
     cache_ttl_catalog: int = 120
 

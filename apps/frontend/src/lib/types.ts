@@ -168,3 +168,19 @@ export interface ContentItem {
   channelTag?: string;
   manifestHint?: string;
 }
+
+export type UserRole = "user" | "admin";
+
+export interface Account {
+  id: number;
+  email: string;
+  display_name: string;
+  role: UserRole;
+  created_at: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  user: Account;
+}

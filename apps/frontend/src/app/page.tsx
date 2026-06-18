@@ -16,6 +16,8 @@ import SearchBar from "@/components/SearchBar";
 
 import StreamPlaybackModal from "@/components/StreamPlaybackModal";
 
+import RequireAuth from "@/components/RequireAuth";
+
 import { generateTestItemKeys, getTestVideos } from "@/lib/api";
 
 import { resolveTestVideos, TEST_VIDEOS } from "@/lib/test-items";
@@ -342,7 +344,15 @@ function DashboardContent() {
 
 export default function DashboardPage() {
 
-  return <DashboardContent />;
+  return (
+
+    <RequireAuth>
+
+      <DashboardContent />
+
+    </RequireAuth>
+
+  );
 
 }
 

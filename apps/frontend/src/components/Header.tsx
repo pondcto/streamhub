@@ -1,6 +1,12 @@
 "use client";
 
+import Link from "next/link";
+
+import { useAuth } from "@/lib/auth";
+
 export default function Header() {
+  const { user, loading, logout } = useAuth();
+
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-surface/80 backdrop-blur-md">
       <div className="flex w-full items-center gap-3 px-4 py-3.5 sm:px-6 lg:px-8">
@@ -25,6 +31,31 @@ export default function Header() {
           <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
           Authorized streaming dashboard
         </span>
+
+        <div className="ml-auto flex items-center gap-3">
+          {!loading && user && (
+            <>
+              <span className="hidden text-sm text-gray-300 sm:inline" title={user.email}>
+                {user.display_name || user.email}
+              </span>
+              <button
+                type="button"
+                onClick={logout}
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
+              >
+                Sign out
+              </button>
+            </>
+          )}
+          {!loading && !user && (
+            <Link
+              href="/login"
+              className="rounded-lg bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover"
+            >
+              Sign in
+            </Link>
+          )}
+        </div>
       </div>
     </header>
   );
