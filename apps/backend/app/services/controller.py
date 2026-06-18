@@ -91,6 +91,11 @@ async def start_channel(
     if is_running(content_id):
         return _info(_processes[content_id])
 
+    # wv-mpd-streaming wants the bare .mpd — drop any ?ssai=...&filter=... query
+    # (the user Watch flow strips this client-side; do it here for admin/scheduled
+    # starts too so all paths behave identically).
+    manifest_url = manifest_url.split("?", 1)[0]
+
     binary = Path(settings.wv_streaming_binary)
     if not binary.exists():
         raise FileNotFoundError(
@@ -199,9 +204,9 @@ def read_log_since(content_id: str, offset: int = 0) -> tuple[str, int]:
         size = path.stat().st_size
         if offset < 0 or offset > size:
             offset = 0
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        with open(path, "rb") as fh:
             fh.seek(offset)
             data = fh.read()
-        return data, size
+        return data.decode("utf-8", errors="replace"), size
     except OSError:
         return "", offset

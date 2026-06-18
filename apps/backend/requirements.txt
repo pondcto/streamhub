@@ -12,4 +12,4 @@ protobuf>=4.25.0
 xmltodict>=0.13.0
 PyJWT>=2.8.0
 passlib[bcrypt]>=1.7.4
-APScheduler>=3.10.0
+APScheduler>=3.11.0

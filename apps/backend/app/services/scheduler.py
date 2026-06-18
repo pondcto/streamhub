@@ -7,7 +7,6 @@ start_time) and a stop job (at end_time) on the given days_of_week.
 
 import logging
 from typing import Optional
-from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -25,11 +24,11 @@ logger = logging.getLogger(__name__)
 _scheduler: Optional[AsyncIOScheduler] = None
 
 
-def _tz() -> ZoneInfo:
-    try:
-        return ZoneInfo(get_settings().scheduler_timezone)
-    except Exception:
-        return ZoneInfo("UTC")
+def _tz() -> str:
+    # APScheduler accepts an IANA timezone *string* in all 3.x versions (it
+    # converts via pytz). Passing a zoneinfo.ZoneInfo object crashes on
+    # APScheduler < 3.11 ("Only timezones from the pytz library are supported").
+    return get_settings().scheduler_timezone or "UTC"
 
 
 def get_scheduler() -> AsyncIOScheduler:
