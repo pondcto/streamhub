@@ -2,10 +2,23 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import HlsPlayer from "@/components/HlsPlayer";
 import RequireAuth from "@/components/RequireAuth";
 import SchedulesSection from "@/components/SchedulesSection";
 import { fetchLogs, listChannels, startChannel, stopChannel } from "@/lib/admin-api";
+import { resolveHlsUrl } from "@/lib/stream-api";
 import type { AdminChannel } from "@/lib/types";
+
+function StatCard({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-surface-raised px-4 py-3">
+      <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
+      <p className={`mt-1 text-2xl font-semibold ${accent ? "text-accent" : "text-white"}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
 
 function StatusBadge({ running }: { running: boolean }) {
   return (
@@ -30,8 +43,13 @@ function AdminContent() {
   const [busy, setBusy] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [logText, setLogText] = useState("");
+  const [preview, setPreview] = useState<{ contentId: string; url: string } | null>(null);
   const logOffset = useRef(0);
   const logBoxRef = useRef<HTMLPreElement>(null);
+
+  const total = channels.length;
+  const running = channels.filter((c) => c.running).length;
+  const captured = channels.filter((c) => c.hasManifest).length;
 
   const refresh = useCallback(async () => {
     try {
@@ -112,6 +130,12 @@ function AdminContent() {
         </div>
       )}
 
+      <div className="mb-6 grid grid-cols-3 gap-3 sm:max-w-md">
+        <StatCard label="Channels" value={total} />
+        <StatCard label="Running" value={running} accent />
+        <StatCard label="Captured" value={captured} />
+      </div>
+
       <div className="overflow-hidden rounded-xl border border-white/10 bg-surface-raised">
         <table className="w-full text-sm">
           <thead>
@@ -148,6 +172,17 @@ function AdminContent() {
                     >
                       Logs
                     </button>
+                    {ch.running && ch.hlsUrl && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPreview({ contentId: ch.contentId, url: resolveHlsUrl(ch.hlsUrl!) })
+                        }
+                        className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
+                      >
+                        Preview
+                      </button>
+                    )}
                     {ch.running ? (
                       <button
                         type="button"
@@ -203,6 +238,26 @@ function AdminContent() {
           >
             {logText || "Waiting for log output…"}
           </pre>
+        </div>
+      )}
+
+      {preview && (
+        <div className="mt-6 overflow-hidden rounded-xl border border-white/10 bg-surface-raised">
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+            <h2 className="text-sm font-semibold text-white">
+              Preview · <span className="font-mono text-gray-400">{preview.contentId}</span>
+            </h2>
+            <button
+              type="button"
+              onClick={() => setPreview(null)}
+              className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-gray-300 hover:bg-white/5 hover:text-white"
+            >
+              Close
+            </button>
+          </div>
+          <div className="p-4">
+            <HlsPlayer src={preview.url} />
+          </div>
         </div>
       )}
 
