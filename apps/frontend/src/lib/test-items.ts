@@ -163,10 +163,11 @@ export function resolveTestVideos(apiItems: TestVideoCard[]): ContentItem[] {
   return TEST_VIDEOS.map((staticItem) => {
     const apiItem = fromApi.find((item) => item.id === staticItem.id);
     if (!apiItem) return staticItem;
-    // Drop undefined API fields so static thumbnails/logos/numbers are preserved
-    // (the backend test catalog has no images for these channels).
+    // Drop null/undefined/empty API fields so static thumbnails/logos/numbers
+    // survive the merge (the backend test catalog returns image: null for these
+    // channels, which would otherwise overwrite the static thumbnail path).
     const clean = Object.fromEntries(
-      Object.entries(apiItem).filter(([, v]) => v !== undefined && v !== ""),
+      Object.entries(apiItem).filter(([, v]) => v != null && v !== ""),
     );
     return { ...staticItem, ...clean };
   });
