@@ -171,12 +171,23 @@ async def start_channel(
     Path(settings.hls_output_dir).mkdir(parents=True, exist_ok=True)
     log_path = logs_dir / f"{content_id}.log"
 
+    # Archive any existing log from a previous run before opening a fresh file,
+    # so display/download always reflects only the current service run.
+    if log_path.exists() and log_path.stat().st_size > 0:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        archive_path = logs_dir / f"{content_id}_{ts}.log"
+        try:
+            log_path.rename(archive_path)
+            logger.info("Archived previous log for %s → %s", content_id, archive_path.name)
+        except OSError:
+            pass  # non-fatal; append mode below is safe fallback
+
     cmd = [str(binary), manifest_url, content_id, _mode_for(content_type)]
     effective_device = device_id or settings.wv_device_id
     if effective_device:
         cmd.append(effective_device)
 
-    log_file = open(log_path, "ab", buffering=0)
+    log_file = open(log_path, "wb", buffering=0)
     popen = subprocess.Popen(
         cmd,
         stdout=log_file,
