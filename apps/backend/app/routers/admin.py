@@ -87,6 +87,7 @@ async def start_channel(content_id: str) -> AdminChannel:
             manifest_url=manifest,
             content_type=spec.content_type,
             channel_tag=spec.channel_tag,
+            admin_managed=True,
         )
     except FileNotFoundError as exc:
         raise HTTPException(

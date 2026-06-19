@@ -5,6 +5,9 @@ waits for its HLS playlist to appear, and stops it via SIGTERM to the process
 group. Linux-targeted (the binary is Linux; uses os.killpg / start_new_session).
 
 Shared by the user "Watch" flow (/api/stream) and the admin controller (phase 3).
+Admin-managed channels (started via the admin panel or scheduler) are not
+stopped by the user Watch-flow cleanup; only an explicit admin stop or a
+scheduled stop can terminate them.
 """
 
 import asyncio
@@ -33,6 +36,9 @@ class ChannelProcess:
     log_path: str
     popen: subprocess.Popen = field(repr=False)
     log_file: Optional[IO[bytes]] = field(default=None, repr=False)
+    # When True only stop_channel() (admin/scheduler) can terminate this
+    # process; the user Watch-flow cleanup is a no-op for this channel.
+    admin_managed: bool = False
 
 
 # contentId -> running process
@@ -57,6 +63,7 @@ def _info(proc: ChannelProcess, *, ready: bool = True) -> dict:
         "status": "playing" if ready else "starting",
         "hlsUrl": proc.hls_url,
         "startedAt": proc.started_at.isoformat(),
+        "adminManaged": proc.admin_managed,
     }
 
 
@@ -79,6 +86,25 @@ def _cleanup(proc: ChannelProcess) -> None:
             pass
 
 
+def _kill(proc: ChannelProcess) -> None:
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        try:
+            proc.popen.terminate()
+        except Exception:
+            pass
+    try:
+        proc.popen.wait(timeout=10)
+    except Exception:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except Exception:
+            pass
+    _cleanup(proc)
+    logger.info("Stopped wv-mpd-streaming for %s (pid %s)", proc.content_id, proc.pid)
+
+
 async def start_channel(
     *,
     content_id: str,
@@ -86,11 +112,17 @@ async def start_channel(
     content_type: str = "live",
     channel_tag: Optional[str] = None,
     device_id: Optional[str] = None,
+    admin_managed: bool = False,
 ) -> dict:
     settings = get_settings()
 
     if is_running(content_id):
-        return _info(_processes[content_id])
+        proc = _processes[content_id]
+        # Upgrade to admin-managed if the admin (re-)starts an already-running channel.
+        if admin_managed and not proc.admin_managed:
+            proc.admin_managed = True
+            logger.info("Channel %s is now admin-managed", content_id)
+        return _info(proc)
 
     # wv-mpd-streaming wants the bare .mpd — drop any ?ssai=...&filter=... query
     # (the user Watch flow strips this client-side; do it here for admin/scheduled
@@ -140,9 +172,13 @@ async def start_channel(
         log_path=str(log_path),
         popen=popen,
         log_file=log_file,
+        admin_managed=admin_managed,
     )
     _processes[content_id] = proc
-    logger.info("Started wv-mpd-streaming for %s (pid %s): %s", content_id, popen.pid, " ".join(cmd))
+    logger.info(
+        "Started wv-mpd-streaming for %s (pid %s, admin_managed=%s): %s",
+        content_id, popen.pid, admin_managed, " ".join(cmd),
+    )
 
     # Wait for the playlist to materialise (or the process to die / time out).
     playlist = _playlist_path(content_id)
@@ -165,26 +201,29 @@ async def start_channel(
 
 
 def stop_channel(content_id: str) -> bool:
+    """Stop a channel unconditionally (admin panel and scheduler use this)."""
     proc = _processes.pop(content_id, None)
     if proc is None:
         return False
-    try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
-        try:
-            proc.popen.terminate()
-        except Exception:
-            pass
-    try:
-        proc.popen.wait(timeout=10)
-    except Exception:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except Exception:
-            pass
-    _cleanup(proc)
-    logger.info("Stopped wv-mpd-streaming for %s (pid %s)", content_id, proc.pid)
+    _kill(proc)
     return True
+
+
+def stop_user_channel(content_id: str) -> bool:
+    """Stop a channel only if it is NOT admin-managed.
+
+    Called by the user Watch-flow cleanup so that closing a browser modal or
+    tab does not kill a channel that the admin panel is keeping alive.
+    """
+    proc = _processes.get(content_id)
+    if proc is None:
+        return False
+    if proc.admin_managed:
+        logger.debug(
+            "Ignoring Watch-flow stop for admin-managed channel %s", content_id
+        )
+        return False
+    return stop_channel(content_id)
 
 
 def list_running() -> list[dict]:

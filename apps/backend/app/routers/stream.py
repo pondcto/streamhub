@@ -54,7 +54,7 @@ async def stop_stream(
     body: StopStreamRequest,
     _user: User = Depends(get_current_user),
 ) -> dict:
-    stopped = controller.stop_channel(body.contentId)
+    stopped = controller.stop_user_channel(body.contentId)
     return {"contentId": body.contentId, "stopped": stopped}
 
 
