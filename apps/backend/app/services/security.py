@@ -1,26 +1,31 @@
-"""Password hashing (bcrypt via passlib) and JWT access tokens (PyJWT)."""
+"""Password hashing (bcrypt) and JWT access tokens (PyJWT)."""
 
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+import bcrypt
 import jwt
-from passlib.context import CryptContext
 
 from app.config import get_settings
 
 ALGORITHM = "HS256"
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_BCRYPT_ROUNDS = 12
+
+
+def _encode(password: str) -> bytes:
+    # bcrypt truncates at 72 bytes; encode then truncate on the byte boundary
+    return password.encode("utf-8")[:72]
 
 
 def hash_password(password: str) -> str:
-    return _pwd_context.hash(password)
+    return bcrypt.hashpw(_encode(password), bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)).decode("utf-8")
 
 
 def verify_password(password: str, hashed: str) -> bool:
     try:
-        return _pwd_context.verify(password, hashed)
-    except ValueError:
+        return bcrypt.checkpw(_encode(password), hashed.encode("utf-8"))
+    except Exception:
         return False
 
 
