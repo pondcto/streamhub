@@ -146,6 +146,7 @@ export interface TestVideoCard {
   duration?: string;
   image?: string;
   channel_tag?: string;
+  channel_number?: string;
   manifest_hint?: string;
   playable: boolean;
   metadataStatus: "ok" | "fallback";
@@ -168,6 +169,7 @@ export interface ContentItem {
   channelTag?: string;
   manifestHint?: string;
   channelNumber?: string;
+  channelLogo?: string;
 }
 
 export type UserRole = "user" | "admin";

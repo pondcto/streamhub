@@ -19,6 +19,8 @@ type LiveChannelDef = {
   channelNumber: string;
   manifestHint: string;
   cdnHost: string;
+  image: string;
+  logo: string;
 };
 
 const LIVE_CHANNELS: LiveChannelDef[] = [
@@ -29,6 +31,8 @@ const LIVE_CHANNELS: LiveChannelDef[] = [
     channelNumber: "201",
     manifestHint: "USL07/SH4/SH4.isml/.mpd",
     cdnHost: "i-live-cache.akamaized.net",
+    image: "/images/programthumbnail_3.png",
+    logo: "/images/channellogos_1.png",
   },
   {
     id: TEST_VIDEO_IDS.SH2_LIVE,
@@ -37,6 +41,8 @@ const LIVE_CHANNELS: LiveChannelDef[] = [
     channelNumber: "202",
     manifestHint: "USL04/SH2/SH2.isml/.mpd",
     cdnHost: "i-live-cache.akamaized.net",
+    image: "/images/programthumbnail_2.png",
+    logo: "/images/channellogos_2.png",
   },
   {
     id: TEST_VIDEO_IDS.TS2_LIVE,
@@ -45,6 +51,8 @@ const LIVE_CHANNELS: LiveChannelDef[] = [
     channelNumber: "203",
     manifestHint: "USL02/TS2/TS2.isml/.mpd",
     cdnHost: "i-live-cache.akamaized.net",
+    image: "/images/programthumbnail_5.png",
+    logo: "/images/channellogos_3.png",
   },
   {
     id: TEST_VIDEO_IDS.A11_LIVE,
@@ -53,6 +61,8 @@ const LIVE_CHANNELS: LiveChannelDef[] = [
     channelNumber: "211",
     manifestHint: "USL08/A11/A11.isml/.mpd",
     cdnHost: "i-live-cache.akamaized.net",
+    image: "/images/programthumbnail_4.png",
+    logo: "/images/channellogos_4.png",
   },
   {
     id: TEST_VIDEO_IDS.HD9_LIVE,
@@ -61,6 +71,8 @@ const LIVE_CHANNELS: LiveChannelDef[] = [
     channelNumber: "209",
     manifestHint: "USL03/9HD/9HD.isml/.mpd",
     cdnHost: "r-live-cache.akamaized.net",
+    image: "/images/programthumbnail_1.png",
+    logo: "/images/channellogos_5.png",
   },
   {
     id: TEST_VIDEO_IDS.H12_LIVE,
@@ -69,6 +81,8 @@ const LIVE_CHANNELS: LiveChannelDef[] = [
     channelNumber: "212",
     manifestHint: "USL03/12H/12H.isml/.mpd",
     cdnHost: "r-live-cache.akamaized.net",
+    image: "/images/programthumbnail_6.png",
+    logo: "/images/channellogos_6.png",
   },
   {
     id: TEST_VIDEO_IDS.E1W_LIVE,
@@ -77,6 +91,8 @@ const LIVE_CHANNELS: LiveChannelDef[] = [
     channelNumber: "218",
     manifestHint: "USL06/E1W/E1W.isml/.mpd",
     cdnHost: "r-live-cache.akamaized.net",
+    image: "/images/programthumbnail_7.png",
+    logo: "/images/channellogos_7.png",
   },
   {
     id: TEST_VIDEO_IDS.SDN_LIVE,
@@ -85,6 +101,8 @@ const LIVE_CHANNELS: LiveChannelDef[] = [
     channelNumber: "219",
     manifestHint: "USL05/SDN/SDN.isml/.mpd",
     cdnHost: "r-live-cache.akamaized.net",
+    image: "/images/programthumbnail_8.png",
+    logo: "/images/channellogos_8.png",
   },
 ];
 
@@ -93,11 +111,13 @@ export const TEST_VIDEOS: ContentItem[] = [
   ...LIVE_CHANNELS.map((channel) => ({
     id: channel.id,
     title: channel.title,
+    image: channel.image,
     category: "Live",
     subtitle: `Akamai hdntl (${channel.cdnHost}) · ${channel.channelTag}`,
     contentType: "streaming" as const,
     channelTag: channel.channelTag,
     channelNumber: channel.channelNumber,
+    channelLogo: channel.logo,
     manifestHint: channel.manifestHint,
   })),
   {
@@ -142,6 +162,12 @@ export function resolveTestVideos(apiItems: TestVideoCard[]): ContentItem[] {
 
   return TEST_VIDEOS.map((staticItem) => {
     const apiItem = fromApi.find((item) => item.id === staticItem.id);
-    return apiItem ? { ...staticItem, ...apiItem } : staticItem;
+    if (!apiItem) return staticItem;
+    // Drop undefined API fields so static thumbnails/logos/numbers are preserved
+    // (the backend test catalog has no images for these channels).
+    const clean = Object.fromEntries(
+      Object.entries(apiItem).filter(([, v]) => v !== undefined && v !== ""),
+    );
+    return { ...staticItem, ...clean };
   });
 }

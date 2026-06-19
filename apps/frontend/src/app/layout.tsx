@@ -7,6 +7,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "StreamHub",
   description: "Authorized streaming dashboard",
+  icons: { icon: "/images/favicon.png" },
 };
 
 export default function RootLayout({
