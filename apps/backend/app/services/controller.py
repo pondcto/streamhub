@@ -10,6 +10,7 @@ Shared by the user "Watch" flow (/api/stream) and the admin controller (phase 3)
 import asyncio
 import logging
 import os
+import shutil
 import signal
 import subprocess
 from dataclasses import dataclass, field
@@ -105,6 +106,15 @@ async def start_channel(
 
     logs_dir = Path(settings.hls_logs_dir)
     logs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Remove stale HLS output from any previous run so the ready-check can't
+    # fire on an old playlist, and the player always gets a consistent fresh set
+    # of init segments, playlists, and media segments.
+    channel_out = Path(settings.hls_output_dir) / content_id
+    if channel_out.exists():
+        shutil.rmtree(channel_out, ignore_errors=True)
+        logger.info("Cleared stale HLS output for %s", content_id)
+
     Path(settings.hls_output_dir).mkdir(parents=True, exist_ok=True)
     log_path = logs_dir / f"{content_id}.log"
 
