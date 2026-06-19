@@ -78,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(accounts.router)
     app.include_router(stream.router)
     app.include_router(admin.router)
+    app.include_router(admin.download_router)
     app.include_router(schedules.router)
     app.include_router(tracked_session.router)
 

@@ -230,7 +230,7 @@ function AdminContent() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => downloadLogs(selected).catch(() => {})}
+                onClick={() => downloadLogs(selected)}
                 className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-gray-300 hover:bg-white/5 hover:text-white"
               >
                 Download

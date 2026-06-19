@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 
-from app.auth_deps import require_admin
+from app.auth_deps import require_admin, require_admin_download
 from app.config import get_settings
 from app.models.admin import AdminChannel, AdminChannelList, LogChunk
 from app.services import controller
@@ -21,6 +21,10 @@ from app.services.test_items import TEST_ITEMS, find_test_item
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+
+# Separate router for endpoints that must accept a JWT via ?token= query param
+# (e.g. file downloads opened directly in the browser, no Authorization header).
+download_router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 def _manifest_for(channel_tag: str | None) -> str | None:
@@ -129,8 +133,11 @@ async def channel_logs(content_id: str, offset: int = 0) -> LogChunk:
     return LogChunk(content=content, offset=new_offset, running=controller.is_running(content_id))
 
 
-@router.get("/channels/{content_id}/logs/download")
-async def download_channel_logs(content_id: str) -> FileResponse:
+@download_router.get("/channels/{content_id}/logs/download")
+async def download_channel_logs(
+    content_id: str,
+    _: object = Depends(require_admin_download),
+) -> FileResponse:
     settings = get_settings()
     log_path = Path(settings.hls_logs_dir) / f"{content_id}.log"
     if not log_path.is_file():

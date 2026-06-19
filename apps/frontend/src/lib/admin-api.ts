@@ -46,22 +46,13 @@ export function fetchLogs(contentId: string, offset: number): Promise<LogChunk> 
   );
 }
 
-export async function downloadLogs(contentId: string): Promise<void> {
+export function downloadLogs(contentId: string): void {
   const token = getStoredToken();
-  const res = await fetch(
-    `${API_BASE}/api/admin/channels/${encodeURIComponent(contentId)}/logs/download`,
-    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  const params = token ? `?token=${encodeURIComponent(token)}` : "";
+  window.open(
+    `${API_BASE}/api/admin/channels/${encodeURIComponent(contentId)}/logs/download${params}`,
+    "_blank",
   );
-  if (!res.ok) throw new Error(`Download failed (${res.status})`);
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${contentId}.log`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 export interface ScheduleInput {
