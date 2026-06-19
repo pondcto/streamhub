@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import HlsPlayer from "@/components/HlsPlayer";
 import RequireAuth from "@/components/RequireAuth";
 import SchedulesSection from "@/components/SchedulesSection";
-import { fetchLogs, listChannels, startChannel, stopChannel } from "@/lib/admin-api";
+import { downloadLogs, fetchLogs, listChannels, startChannel, stopChannel } from "@/lib/admin-api";
 import { resolveHlsUrl } from "@/lib/stream-api";
 import type { AdminChannel } from "@/lib/types";
 
@@ -227,13 +227,22 @@ function AdminContent() {
             <h2 className="text-sm font-semibold text-white">
               Logs · <span className="font-mono text-gray-400">{selected}</span>
             </h2>
-            <button
-              type="button"
-              onClick={() => setSelected(null)}
-              className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-gray-300 hover:bg-white/5 hover:text-white"
-            >
-              Close
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => downloadLogs(selected).catch(() => {})}
+                className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-gray-300 hover:bg-white/5 hover:text-white"
+              >
+                Download
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-gray-300 hover:bg-white/5 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
           </div>
           <pre
             ref={logBoxRef}

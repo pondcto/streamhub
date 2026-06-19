@@ -6,10 +6,13 @@ wv-mpd-streaming processes.
 """
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 
 from app.auth_deps import require_admin
+from app.config import get_settings
 from app.models.admin import AdminChannel, AdminChannelList, LogChunk
 from app.services import controller
 from app.services.auth import get_stored_live_manifest_url
@@ -124,3 +127,15 @@ async def stop_channel(content_id: str) -> dict:
 async def channel_logs(content_id: str, offset: int = 0) -> LogChunk:
     content, new_offset = controller.read_log_since(content_id, offset)
     return LogChunk(content=content, offset=new_offset, running=controller.is_running(content_id))
+
+
+@router.get("/channels/{content_id}/logs/download")
+async def download_channel_logs(content_id: str) -> FileResponse:
+    settings = get_settings()
+    log_path = Path(settings.hls_logs_dir) / f"{content_id}.log"
+    if not log_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NO_LOGS", "message": f"No log file found for {content_id}."},
+        )
+    return FileResponse(log_path, media_type="text/plain; charset=utf-8", filename=f"{content_id}.log")

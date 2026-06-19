@@ -46,6 +46,24 @@ export function fetchLogs(contentId: string, offset: number): Promise<LogChunk> 
   );
 }
 
+export async function downloadLogs(contentId: string): Promise<void> {
+  const token = getStoredToken();
+  const res = await fetch(
+    `${API_BASE}/api/admin/channels/${encodeURIComponent(contentId)}/logs/download`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${contentId}.log`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export interface ScheduleInput {
   contentId: string;
   startTime: string;
