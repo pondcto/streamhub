@@ -16,6 +16,7 @@ type LiveChannelDef = {
   id: string;
   title: string;
   channelTag: string;
+  channelNumber: string;
   manifestHint: string;
   cdnHost: string;
 };
@@ -23,57 +24,65 @@ type LiveChannelDef = {
 const LIVE_CHANNELS: LiveChannelDef[] = [
   {
     id: TEST_VIDEO_IDS.SH4_LIVE,
-    title: "201 Live",
+    title: "SuperSport 4",
     channelTag: "SH4",
+    channelNumber: "201",
     manifestHint: "USL07/SH4/SH4.isml/.mpd",
     cdnHost: "i-live-cache.akamaized.net",
   },
   {
     id: TEST_VIDEO_IDS.SH2_LIVE,
-    title: "202 Live",
+    title: "SuperSport 2",
     channelTag: "SH2",
+    channelNumber: "202",
     manifestHint: "USL04/SH2/SH2.isml/.mpd",
     cdnHost: "i-live-cache.akamaized.net",
   },
   {
     id: TEST_VIDEO_IDS.TS2_LIVE,
-    title: "203 Live",
+    title: "SuperSport 3",
     channelTag: "TS2",
+    channelNumber: "203",
     manifestHint: "USL02/TS2/TS2.isml/.mpd",
     cdnHost: "i-live-cache.akamaized.net",
   },
   {
     id: TEST_VIDEO_IDS.A11_LIVE,
-    title: "211 Live",
+    title: "SuperSport 11",
     channelTag: "A11",
+    channelNumber: "211",
     manifestHint: "USL08/A11/A11.isml/.mpd",
     cdnHost: "i-live-cache.akamaized.net",
   },
   {
     id: TEST_VIDEO_IDS.HD9_LIVE,
-    title: "209 Live",
+    title: "SuperSport 9",
     channelTag: "9HD",
+    channelNumber: "209",
     manifestHint: "USL03/9HD/9HD.isml/.mpd",
     cdnHost: "r-live-cache.akamaized.net",
   },
   {
     id: TEST_VIDEO_IDS.H12_LIVE,
-    title: "212 Live",
+    title: "SuperSport 12",
     channelTag: "12H",
+    channelNumber: "212",
     manifestHint: "USL03/12H/12H.isml/.mpd",
     cdnHost: "r-live-cache.akamaized.net",
   },
   {
     id: TEST_VIDEO_IDS.E1W_LIVE,
-    title: "218 Live",
+    title: "ESPN",
     channelTag: "E1W",
+    channelNumber: "218",
     manifestHint: "USL06/E1W/E1W.isml/.mpd",
     cdnHost: "r-live-cache.akamaized.net",
   },
   {
     id: TEST_VIDEO_IDS.SDN_LIVE,
-    title: "219 Live",
+    title: "NFL Network",
     channelTag: "SDN",
+    channelNumber: "219",
     manifestHint: "USL05/SDN/SDN.isml/.mpd",
     cdnHost: "r-live-cache.akamaized.net",
   },
@@ -88,6 +97,7 @@ export const TEST_VIDEOS: ContentItem[] = [
     subtitle: `Akamai hdntl (${channel.cdnHost}) · ${channel.channelTag}`,
     contentType: "streaming" as const,
     channelTag: channel.channelTag,
+    channelNumber: channel.channelNumber,
     manifestHint: channel.manifestHint,
   })),
   {
@@ -122,6 +132,7 @@ export function resolveTestVideos(apiItems: TestVideoCard[]): ContentItem[] {
           ? ("streaming" as const)
           : ("vod" as const),
       channelTag: card.channel_tag,
+      channelNumber: card.channel_number,
       manifestHint: card.manifest_hint,
     }));
 

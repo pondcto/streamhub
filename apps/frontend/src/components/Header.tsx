@@ -1,15 +1,19 @@
 "use client";
 
 import Link from "next/link";
-
 import { useAuth } from "@/lib/auth";
+import { useSearch } from "@/lib/search-context";
+import SearchBar from "@/components/SearchBar";
 
 export default function Header() {
   const { user, loading, logout } = useAuth();
+  const { search, setSearch } = useSearch();
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-surface/80 backdrop-blur-md">
-      <div className="flex w-full items-center gap-3 px-4 py-3.5 sm:px-6 lg:px-8">
+      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-4 px-4 py-3 sm:px-6 lg:px-8">
+
+        {/* Left: logo */}
         <a href="/" className="group flex items-center gap-2.5">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent shadow-glow transition-transform group-hover:scale-105">
             <svg
@@ -27,12 +31,17 @@ export default function Header() {
           </span>
         </a>
 
-        <span className="ml-3 hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-gray-400 sm:inline-flex">
-          <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          Authorized streaming dashboard
-        </span>
+        {/* Center: search */}
+        <div className="mx-auto w-full max-w-lg">
+          <SearchBar
+            value={search}
+            onChange={setSearch}
+            placeholder="Search channels, shows…"
+          />
+        </div>
 
-        <div className="ml-auto flex items-center gap-3">
+        {/* Right: user actions */}
+        <div className="flex items-center gap-3">
           {!loading && user && (
             <>
               {user.role === "admin" && (

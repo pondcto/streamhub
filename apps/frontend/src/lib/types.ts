@@ -135,7 +135,7 @@ export interface ApiError {
   detail?: string;
 }
 
-export type DashboardSection = "test";
+export type DashboardSection = "live" | "shows";
 
 export interface TestVideoCard {
   id: string;
@@ -167,6 +167,7 @@ export interface ContentItem {
   contentType: "vod" | "live" | "streaming";
   channelTag?: string;
   manifestHint?: string;
+  channelNumber?: string;
 }
 
 export type UserRole = "user" | "admin";
