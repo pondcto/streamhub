@@ -1,25 +1,9 @@
 "use client";
 
+import Hls from "hls.js";
 import { useEffect, useRef, useState } from "react";
 
-// Minimal shape of the bits of shaka-player we use (avoids `any`).
-interface ShakaPlayerInstance {
-  addEventListener(type: string, listener: (event: Event) => void): void;
-  load(uri: string): Promise<void>;
-  destroy(): Promise<void>;
-}
-interface ShakaStatic {
-  polyfill: { installAll(): void };
-  Player: {
-    isBrowserSupported(): boolean;
-    new (mediaElement: HTMLMediaElement): ShakaPlayerInstance;
-  };
-}
-interface ShakaModule {
-  default: ShakaStatic;
-}
-
-/** Plays an HLS (.m3u8) URL — native on Safari, shaka-player elsewhere. */
+/** Plays an HLS (.m3u8) URL — native on Safari, hls.js elsewhere. */
 export default function HlsPlayer({ src }: { src: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -28,51 +12,49 @@ export default function HlsPlayer({ src }: { src: string }) {
     const video = videoRef.current;
     if (!video || !src) return;
 
-    let player: ShakaPlayerInstance | null = null;
-    let cancelled = false;
+    setError(null);
 
-    async function setup() {
-      // Native HLS (Safari / iOS).
-      if (video!.canPlayType("application/vnd.apple.mpegurl")) {
-        video!.src = src;
-        return;
+    // Safari / iOS play HLS natively via the <video> element.
+    if (!Hls.isSupported()) {
+      if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = src;
+        video.play().catch(() => {});
+      } else {
+        setError("HLS playback is not supported in this browser.");
       }
-      try {
-        const mod = (await import(
-          "shaka-player/dist/shaka-player.compiled.js"
-        )) as unknown as ShakaModule;
-        if (cancelled) return;
-        const shaka = mod.default;
-        shaka.polyfill.installAll();
-        if (!shaka.Player.isBrowserSupported()) {
-          setError("This browser can't play the stream.");
-          return;
-        }
-        player = new shaka.Player(video!);
-        // Retry failed segment/init fetches — transient network blips or
-        // a preflight race can fail the first attempt.
-        (player as unknown as { configure(cfg: object): void }).configure({
-          streaming: {
-            retryParameters: { maxAttempts: 5, baseDelay: 1000, backoffFactor: 2, fuzzFactor: 0.5 },
-          },
-          manifest: {
-            retryParameters: { maxAttempts: 5, baseDelay: 1000, backoffFactor: 2, fuzzFactor: 0.5 },
-          },
-        });
-        player.addEventListener("error", () => setError("Playback error — the stream may still be starting."));
-        await player.load(src);
-      } catch {
-        if (!cancelled) setError("Failed to load the player.");
-      }
+      return;
     }
 
-    setError(null);
-    setup();
+    const hls = new Hls({
+      enableWorker: true,       // demux in a web worker for smoother playback
+      liveSyncDurationCount: 3, // target 3 segments behind live edge
+      liveMaxLatencyDurationCount: 8,
+      maxBufferLength: 30,
+    });
 
-    return () => {
-      cancelled = true;
-      if (player) player.destroy().catch(() => {});
-    };
+    hls.loadSource(src);
+    hls.attachMedia(video);
+
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      video.play().catch(() => {});
+    });
+
+    let networkRetries = 0;
+    hls.on(Hls.Events.ERROR, (_, data) => {
+      if (!data.fatal) return;
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries < 4) {
+        // Transient network failure — reload the manifest and try again.
+        networkRetries++;
+        hls.startLoad();
+      } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        hls.recoverMediaError();
+      } else {
+        setError("Playback error — the stream may still be starting.");
+        hls.destroy();
+      }
+    });
+
+    return () => hls.destroy();
   }, [src]);
 
   return (
