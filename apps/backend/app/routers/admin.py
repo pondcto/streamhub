@@ -145,4 +145,4 @@ async def download_channel_logs(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "NO_LOGS", "message": f"No log file found for {content_id}."},
         )
-    return FileResponse(log_path, media_type="text/plain; charset=utf-8", filename=f"{content_id}.log")
+    return FileResponse(log_path, media_type="application/octet-stream", filename=f"{content_id}.log")
