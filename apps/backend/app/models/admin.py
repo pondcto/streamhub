@@ -14,6 +14,7 @@ class AdminChannel(BaseModel):
     pid: Optional[int] = None
     hlsUrl: Optional[str] = None
     startedAt: Optional[str] = None
+    directHlsUrl: Optional[str] = None
 
 
 class AdminChannelList(BaseModel):

@@ -48,6 +48,10 @@ class TestItemSpec:
 
     category: str = "Sport"
 
+    # Public HLS URL that can be played directly in the browser without the
+    # decryption backend (e.g. a free/unencrypted live stream).
+    direct_hls_url: Optional[str] = None
+
 
 
 
@@ -96,6 +100,8 @@ def _akamai_live(
 
     title: str,
 
+    direct_hls_url: Optional[str] = None,
+
 ) -> TestItemSpec:
 
     return TestItemSpec(
@@ -117,6 +123,8 @@ def _akamai_live(
         description=f"Live linear — {title} ({live_cdn_host}, hdntl).",
 
         category="Live",
+
+        direct_hls_url=direct_hls_url,
 
     )
 
@@ -159,6 +167,8 @@ TEST_ITEMS: tuple[TestItemSpec, ...] = (
         live_cdn_host="i-live-cache.akamaized.net",
 
         title="203 Live",
+
+        direct_hls_url="https://live2.mzolotv.com/TS2/TS2.m3u8",
 
     ),
 

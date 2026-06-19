@@ -41,6 +41,7 @@ async def list_channels() -> AdminChannelList:
                 pid=info["pid"] if info else None,
                 hlsUrl=info["hlsUrl"] if info else None,
                 startedAt=info["startedAt"] if info else None,
+                directHlsUrl=spec.direct_hls_url,
             )
         )
     return AdminChannelList(channels=channels)

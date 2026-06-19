@@ -172,11 +172,14 @@ function AdminContent() {
                     >
                       Logs
                     </button>
-                    {ch.running && ch.hlsUrl && (
+                    {(ch.directHlsUrl || (ch.running && ch.hlsUrl)) && (
                       <button
                         type="button"
                         onClick={() =>
-                          setPreview({ contentId: ch.contentId, url: resolveHlsUrl(ch.hlsUrl!) })
+                          setPreview({
+                            contentId: ch.contentId,
+                            url: ch.directHlsUrl ?? resolveHlsUrl(ch.hlsUrl!),
+                          })
                         }
                         className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
                       >

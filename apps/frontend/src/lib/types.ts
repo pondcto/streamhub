@@ -205,6 +205,7 @@ export interface AdminChannel {
   pid?: number | null;
   hlsUrl?: string | null;
   startedAt?: string | null;
+  directHlsUrl?: string | null;
 }
 
 export interface LogChunk {
