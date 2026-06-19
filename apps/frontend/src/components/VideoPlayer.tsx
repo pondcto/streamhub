@@ -10,164 +10,92 @@ interface VideoPlayerProps {
   contentTitle?: string;
 }
 
-type PlayerError = {
-  code: string;
-  message: string;
-};
+type PlayerError = { code: string; message: string };
 
-type ShakaNetworkingEngine = {
-  RequestType: {
-    LICENSE: number;
-  };
-  registerRequestFilter: (
-    filter: (type: number, request: { uris: string[]; allowCrossSiteCredentials?: boolean }) => void
-  ) => void;
-};
-
-type ShakaPlayerInstance = {
-  destroy: () => void | Promise<void>;
-  getNetworkingEngine: () => ShakaNetworkingEngine;
-};
-
-type ShakaModule = {
-  default: {
-    polyfill: { installAll: () => void };
-    Player: {
-      isBrowserSupported: () => boolean;
-      new (): ShakaPlayerInstance & {
-        attach: (video: HTMLVideoElement) => Promise<void>;
-        configure: (config: object) => void;
-        addEventListener: (type: string, listener: (event: Event) => void) => void;
-        load: (uri: string) => Promise<void>;
-      };
-    };
-    net: {
-      NetworkingEngine: ShakaNetworkingEngine;
-    };
-  };
-};
-
-function mapShakaError(err: unknown): PlayerError {
-  if (err && typeof err === "object" && "code" in err) {
-    const code = Number((err as { code: number }).code);
-    const category = Math.floor(code / 1000);
-
-    if (category === 6) {
-      return {
-        code: "LICENSE_FAILURE",
-        message:
-          "Widevine license request failed. Your entitlement session may be expired or denied.",
-      };
+function mapDashError(e: unknown): PlayerError {
+  if (e && typeof e === "object") {
+    const inner = (e as Record<string, unknown>).error as Record<string, unknown> | undefined;
+    if (inner) {
+      const code = Number(inner.code ?? 0);
+      // Protection/DRM errors: 111–113
+      if (code >= 111 && code <= 113) {
+        return { code: "LICENSE_FAILURE", message: "Widevine license request failed. Your entitlement session may be expired or denied." };
+      }
+      // Manifest errors: 10–29
+      if (code >= 10 && code <= 29) {
+        return { code: "MANIFEST_FAILURE", message: "Failed to load the manifest (.mpd). The stream may be unavailable." };
+      }
+      const msg = String(inner.message ?? "Playback error occurred.");
+      if (msg.includes("403")) {
+        return { code: "ENTITLEMENT_DENIED", message: "Access denied (403). The CDN token may have expired — click Watch again for a fresh session." };
+      }
+      return { code: `DASH_${code}`, message: msg };
     }
-    if (category === 4) {
-      return {
-        code: "MANIFEST_FAILURE",
-        message: "Failed to load the manifest (.mpd). The stream may be unavailable.",
-      };
-    }
-    if (category === 7) {
-      return {
-        code: "NETWORK_FAILURE",
-        message: "Network error during playback. Check CORS and connectivity.",
-      };
-    }
-    return {
-      code: `SHAKA_${code}`,
-      message: (err as { message?: string }).message ?? "Playback error occurred.",
-    };
   }
-  return {
-    code: "PLAYBACK_ERROR",
-    message: err instanceof Error ? err.message : "Unknown playback error.",
-  };
-}
-
-function registerCdnProxyFilter(shaka: ShakaModule["default"], player: ShakaPlayerInstance) {
-  const net = player.getNetworkingEngine();
-  const licenseType = shaka.net.NetworkingEngine.RequestType.LICENSE;
-
-  net.registerRequestFilter((type, request) => {
-    if (type === licenseType) {
-      return;
-    }
-
-    request.uris = request.uris.map((uri) =>
-      shouldProxyCdnUrl(uri) ? toCdnProxyUrl(uri) : uri
-    );
-    if (request.uris.some((uri) => uri.includes("/api/playback/cdn?"))) {
-      request.allowCrossSiteCredentials = true;
-    }
-  });
+  const msg = e instanceof Error ? e.message : String(e ?? "Unknown playback error.");
+  if (msg.includes("403")) {
+    return { code: "ENTITLEMENT_DENIED", message: "Access denied (403). The CDN token may have expired — click Watch again for a fresh session." };
+  }
+  return { code: "PLAYBACK_ERROR", message: msg };
 }
 
 export default function VideoPlayer({ playback, contentTitle }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const playerRef = useRef<ShakaPlayerInstance | null>(null);
+  const playerRef = useRef<{ destroy(): void } | null>(null);
   const [error, setError] = useState<PlayerError | null>(null);
   const [loading, setLoading] = useState(true);
 
   const initPlayer = useCallback(async () => {
     if (!videoRef.current) return;
 
-    const expiresAt = new Date(playback.expiresAt);
-    if (expiresAt.getTime() <= Date.now()) {
-      setError({
-        code: "SESSION_EXPIRED",
-        message: "Playback session has expired. Return to the dashboard and try again.",
-      });
+    if (new Date(playback.expiresAt).getTime() <= Date.now()) {
+      setError({ code: "SESSION_EXPIRED", message: "Playback session has expired. Return to the dashboard and try again." });
       setLoading(false);
       return;
     }
 
     try {
-      // shaka-player's shipped types don't structurally match our local
-      // ShakaModule shape, so cast through `unknown` (TS2352).
-      const shakaModule = (await import(
-        "shaka-player/dist/shaka-player.compiled.js"
-      )) as unknown as ShakaModule;
-      const shaka = shakaModule.default;
-      shaka.polyfill.installAll();
-
-      if (!shaka.Player.isBrowserSupported()) {
-        setError({
-          code: "BROWSER_UNSUPPORTED",
-          message: "This browser does not support encrypted media playback.",
-        });
-        setLoading(false);
-        return;
-      }
-
-      const player = new shaka.Player();
+      const dashjs = (await import("dashjs")).default;
+      const player = dashjs.MediaPlayer().create();
       playerRef.current = player;
-      await player.attach(videoRef.current);
 
-      player.configure({
-        drm: {
-          servers: {
-            "com.widevine.alpha": playback.drm.widevine.licenseUrl,
-          },
+      // Initialize without source so DRM and request modifier are set first.
+      player.initialize(videoRef.current, null, false);
+
+      // Widevine DRM.
+      player.setProtectionData({
+        "com.widevine.alpha": {
+          serverURL: playback.drm.widevine.licenseUrl,
+          withCredentials: false,
         },
       });
 
-      registerCdnProxyFilter(shaka, player);
+      // Route CDN segment / manifest requests through the backend proxy.
+      // License requests go to licensev2.dstv.com and won't match shouldProxyCdnUrl().
+      (player as unknown as {
+        extend(type: string, factory: () => object, override: boolean): void;
+      }).extend("RequestModifier", () => ({
+        modifyRequestURL(url: string): string {
+          return shouldProxyCdnUrl(url) ? toCdnProxyUrl(url) : url;
+        },
+        modifyRequestHeader(headers: Record<string, string>): Record<string, string> {
+          return headers;
+        },
+      }), true);
 
-      player.addEventListener("error", (event: Event) => {
-        const detail = (event as CustomEvent).detail;
-        setError(mapShakaError(detail));
+      player.on(dashjs.MediaPlayer.events.ERROR, (e: unknown) => {
+        setError(mapDashError(e));
         setLoading(false);
       });
 
-      const manifestUrl = wrapManifestForPlayback(playback.manifestUrl);
-      await player.load(manifestUrl);
-      setLoading(false);
+      player.on(dashjs.MediaPlayer.events.CAN_PLAY, () => {
+        setLoading(false);
+        void player.play();
+      });
+
+      player.attachSource(wrapManifestForPlayback(playback.manifestUrl));
     } catch (err) {
-      const mapped = mapShakaError(err);
-      if (mapped.message.toLowerCase().includes("403")) {
-        mapped.code = "ENTITLEMENT_DENIED";
-        mapped.message =
-          "Access denied (403). The CDN token may have expired — click Watch again for a fresh session.";
-      }
-      setError(mapped);
+      setError(mapDashError(err));
       setLoading(false);
     }
   }, [playback]);
@@ -185,24 +113,15 @@ export default function VideoPlayer({ playback, contentTitle }: VideoPlayerProps
       {contentTitle && (
         <h1 className="mb-4 text-xl font-semibold text-white">{contentTitle}</h1>
       )}
-
       <ErrorBanner error={error} />
-
       <div className="relative aspect-video overflow-hidden rounded-xl bg-black">
         {loading && !error && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60">
             <div className="h-10 w-10 animate-spin rounded-full border-2 border-accent border-t-transparent" />
           </div>
         )}
-        <video
-          ref={videoRef}
-          className="h-full w-full"
-          controls
-          autoPlay
-          playsInline
-        />
+        <video ref={videoRef} className="h-full w-full" controls playsInline />
       </div>
-
       <p className="mt-3 text-xs text-gray-500">
         Session expires: {new Date(playback.expiresAt).toLocaleString()}
       </p>
