@@ -169,7 +169,6 @@ export interface ContentItem {
   channelTag?: string;
   manifestHint?: string;
   channelNumber?: string;
-  channelLogo?: string;
 }
 
 export type UserRole = "user" | "admin";

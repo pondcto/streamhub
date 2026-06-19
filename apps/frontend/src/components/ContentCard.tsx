@@ -72,18 +72,6 @@ export default function ContentCard({ item, onWatch, watchLoading = false }: Con
           </span>
         )}
 
-        {/* Channel logo — top-right */}
-        {item.channelLogo && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={item.channelLogo}
-            alt=""
-            aria-hidden="true"
-            className="absolute right-1.5 top-1.5 h-8 w-8 object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]"
-            loading="lazy"
-          />
-        )}
-
         {/* Live badge — bottom-left */}
         {isLive && (
           <span className="absolute bottom-2 left-2 flex items-center gap-1 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
