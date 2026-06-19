@@ -1,11 +1,11 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import get_settings
 from app.db import init_db
@@ -82,12 +82,21 @@ def create_app() -> FastAPI:
     app.include_router(tracked_session.router)
 
     # Serve the restreamer's HLS output (/tmp/hls/files) at /hls/<contentId>/...
+    # Explicit route (not StaticFiles mount) so the full middleware stack —
+    # including CORSMiddleware — wraps every request. StaticFiles handles its own
+    # OPTIONS responses before CORSMiddleware can intercept them, which breaks
+    # CORS preflight for Range-header requests (audio init segments).
     os.makedirs(settings.hls_output_dir, exist_ok=True)
-    app.mount(
-        "/hls",
-        StaticFiles(directory=settings.hls_output_dir, check_dir=False),
-        name="hls",
-    )
+    _hls_base = Path(settings.hls_output_dir).resolve()
+
+    @app.get("/hls/{path:path}")
+    async def serve_hls(path: str) -> FileResponse:
+        target = (_hls_base / path).resolve()
+        if not target.is_relative_to(_hls_base):
+            raise HTTPException(status_code=403)
+        if not target.is_file():
+            raise HTTPException(status_code=404)
+        return FileResponse(target)
 
     @app.exception_handler(EntitlementError)
     async def entitlement_error_handler(request: Request, exc: EntitlementError):

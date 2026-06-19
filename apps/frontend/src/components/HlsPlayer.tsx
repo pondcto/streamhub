@@ -49,6 +49,16 @@ export default function HlsPlayer({ src }: { src: string }) {
           return;
         }
         player = new shaka.Player(video!);
+        // Retry failed segment/init fetches — transient network blips or
+        // a preflight race can fail the first attempt.
+        (player as unknown as { configure(cfg: object): void }).configure({
+          streaming: {
+            retryParameters: { maxAttempts: 5, baseDelay: 1000, backoffFactor: 2, fuzzFactor: 0.5 },
+          },
+          manifest: {
+            retryParameters: { maxAttempts: 5, baseDelay: 1000, backoffFactor: 2, fuzzFactor: 0.5 },
+          },
+        });
         player.addEventListener("error", () => setError("Playback error — the stream may still be starting."));
         await player.load(src);
       } catch {

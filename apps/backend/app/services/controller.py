@@ -55,6 +55,27 @@ def _playlist_path(content_id: str) -> Path:
     return Path(settings.hls_output_dir) / content_id / f"{content_id}.m3u8"
 
 
+def _hls_ready(content_id: str) -> bool:
+    """Return True only when the master playlist AND all init files it references exist."""
+    master = _playlist_path(content_id)
+    if not (master.exists() and master.stat().st_size > 0):
+        return False
+    try:
+        text = master.read_text(errors="replace")
+    except OSError:
+        return False
+    channel_dir = master.parent
+    # If the master mentions a separate audio rendition, wait for its init too.
+    if "_audio.m3u8" in text:
+        audio_init = channel_dir / f"{content_id}_a_init.mp4"
+        if not (audio_init.exists() and audio_init.stat().st_size > 0):
+            return False
+    video_init = channel_dir / f"{content_id}_v_init.mp4"
+    if not (video_init.exists() and video_init.stat().st_size > 0):
+        return False
+    return True
+
+
 def _info(proc: ChannelProcess, *, ready: bool = True) -> dict:
     return {
         "contentId": proc.content_id,
@@ -180,8 +201,9 @@ async def start_channel(
         content_id, popen.pid, admin_managed, " ".join(cmd),
     )
 
-    # Wait for the playlist to materialise (or the process to die / time out).
-    playlist = _playlist_path(content_id)
+    # Wait for the master playlist AND all init files to materialise (or the
+    # process to die / time out). _hls_ready() also checks init files so the
+    # player never gets a "ready" signal when the audio init is still being written.
     waited = 0.0
     timeout = settings.hls_ready_timeout_seconds
     while waited < timeout:
@@ -191,7 +213,7 @@ async def start_channel(
             raise RuntimeError(
                 f"wv-mpd-streaming exited early (code {popen.returncode}). See {log_path}."
             )
-        if playlist.exists() and playlist.stat().st_size > 0:
+        if _hls_ready(content_id):
             return _info(proc, ready=True)
         await asyncio.sleep(0.5)
         waited += 0.5
