@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 from typing import Any, Literal, Optional
 from urllib.parse import quote, urlencode, urlparse
 
@@ -101,6 +102,17 @@ def live_manifest_cdn_type(url: str) -> Optional[LiveManifestCdn]:
     if is_akamai_hdntl_manifest_url(url):
         return "akamai"
     return None
+
+
+def akamai_token_expires_at(url: str) -> Optional[int]:
+    """Return the Unix expiry timestamp from an Akamai hdntl token, or None."""
+    m = re.search(r"(?:^|[/=])exp=(\d+)[~]", url)
+    return int(m.group(1)) if m else None
+
+
+def is_akamai_token_expired(url: str) -> bool:
+    exp = akamai_token_expires_at(url)
+    return exp is not None and time.time() > exp
 
 
 def is_signed_manifest_url(url: str) -> bool:

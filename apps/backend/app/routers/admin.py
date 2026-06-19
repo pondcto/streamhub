@@ -13,6 +13,7 @@ from app.auth_deps import require_admin
 from app.models.admin import AdminChannel, AdminChannelList, LogChunk
 from app.services import controller
 from app.services.auth import get_stored_live_manifest_url
+from app.services.live_manifest import akamai_token_expires_at, is_akamai_token_expired
 from app.services.test_items import TEST_ITEMS, find_test_item
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,20 @@ async def start_channel(content_id: str) -> AdminChannel:
                     f"No captured manifest for {spec.channel_tag or spec.id}. "
                     "Play the channel on dstv.stream so the session tracker captures a "
                     "live_manifest_url, then start again."
+                ),
+            },
+        )
+    if is_akamai_token_expired(manifest):
+        import datetime as _dt
+        exp = akamai_token_expires_at(manifest)
+        exp_str = _dt.datetime.utcfromtimestamp(exp).strftime("%Y-%m-%d %H:%M UTC") if exp else "unknown"
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "MANIFEST_EXPIRED",
+                "message": (
+                    f"Stored manifest for {spec.channel_tag or spec.id} expired at {exp_str}. "
+                    "Re-play the channel on dstv.stream to capture a fresh URL, then start again."
                 ),
             },
         )
