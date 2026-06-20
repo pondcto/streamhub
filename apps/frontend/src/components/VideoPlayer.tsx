@@ -114,15 +114,19 @@ export default function VideoPlayer({ playback, contentTitle }: VideoPlayerProps
         <h1 className="mb-4 text-xl font-semibold text-white">{contentTitle}</h1>
       )}
       <ErrorBanner error={error} />
-      <div className="relative aspect-video overflow-hidden rounded-xl bg-black">
+      <div className="relative aspect-video overflow-hidden rounded-2xl border border-white/10 bg-surface-sunken shadow-pop ring-1 ring-white/5">
         {loading && !error && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/70 backdrop-blur-sm">
+            <div className="relative h-11 w-11">
+              <div className="absolute inset-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+              <div className="absolute inset-2 animate-glow-pulse rounded-full bg-accent/20" />
+            </div>
+            <p className="text-xs text-content-faint">Preparing secure playback…</p>
           </div>
         )}
         <video ref={videoRef} className="h-full w-full" controls playsInline />
       </div>
-      <p className="mt-3 text-xs text-gray-500">
+      <p className="mt-3 text-xs text-content-faint">
         Session expires: {new Date(playback.expiresAt).toLocaleString()}
       </p>
     </div>

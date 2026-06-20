@@ -15,7 +15,7 @@ export default function ErrorBanner({ error, onDismiss }: ErrorBannerProps) {
   return (
     <div
       role="alert"
-      className="mb-4 flex items-start gap-3 rounded-lg border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-200"
+      className="mb-4 flex animate-fade-in items-start gap-3 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger-soft backdrop-blur-sm"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -23,7 +23,7 @@ export default function ErrorBanner({ error, onDismiss }: ErrorBannerProps) {
         viewBox="0 0 24 24"
         strokeWidth={1.8}
         stroke="currentColor"
-        className="mt-0.5 h-4 w-4 shrink-0 text-red-400"
+        className="mt-0.5 h-4 w-4 shrink-0 text-danger"
         aria-hidden="true"
       >
         <path
@@ -36,10 +36,10 @@ export default function ErrorBanner({ error, onDismiss }: ErrorBannerProps) {
       <div className="min-w-0 flex-1">
         <p className="font-medium">{error.message}</p>
         {error.detail && (
-          <p className="mt-0.5 text-xs text-red-300/80">{error.detail}</p>
+          <p className="mt-0.5 text-xs text-danger-soft/80">{error.detail}</p>
         )}
         {error.code && (
-          <p className="mt-1 font-mono text-[11px] uppercase tracking-wide text-red-400/70">
+          <p className="mt-1 font-mono text-[11px] uppercase tracking-wide text-danger/70">
             {error.code}
           </p>
         )}
@@ -50,7 +50,7 @@ export default function ErrorBanner({ error, onDismiss }: ErrorBannerProps) {
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss"
-          className="shrink-0 rounded-md p-1 text-red-300/70 transition-colors hover:bg-red-500/10 hover:text-red-100"
+          className="shrink-0 rounded-md p-1 text-danger-soft/70 transition-colors hover:bg-danger/10 hover:text-danger-soft"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"

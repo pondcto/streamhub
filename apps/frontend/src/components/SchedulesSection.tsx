@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { createSchedule, deleteSchedule, listSchedules, updateSchedule } from "@/lib/admin-api";
 import { useToast } from "@/components/Toast";
+import Button from "@/components/ui/Button";
+import { cn } from "@/lib/cn";
 import type { AdminChannel, Schedule } from "@/lib/types";
 
 const DAYS: [string, string][] = [
@@ -107,21 +109,21 @@ export default function SchedulesSection({ channels }: { channels: AdminChannel[
   return (
     <div>
       <h2 className="mb-1 text-lg font-semibold text-white">Schedules</h2>
-      <p className="mb-3 text-sm text-gray-400">
+      <p className="mb-4 text-sm text-content-muted">
         Channels auto-start and stop at these times (server timezone). A capture must exist when a
         start fires.
       </p>
 
       <form
         onSubmit={handleAdd}
-        className="mb-4 grid grid-cols-1 gap-4 rounded-xl border border-white/10 bg-surface-raised p-4 sm:grid-cols-2 lg:grid-cols-5"
+        className="mb-4 grid grid-cols-1 gap-4 rounded-2xl border border-white/10 bg-surface-raised p-4 sm:grid-cols-2 lg:grid-cols-5"
       >
         <label className="block">
-          <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">Channel</span>
+          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-content-muted">Channel</span>
           <select
             value={contentId}
             onChange={(e) => setContentId(e.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-white focus:border-accent/40 focus:outline-none"
+            className="w-full rounded-lg border border-white/10 bg-surface-overlay px-3 py-2.5 text-sm text-white transition-colors focus:border-accent/50 focus:outline-none"
           >
             {channels.map((c) => (
               <option key={c.contentId} value={c.contentId}>
@@ -132,38 +134,40 @@ export default function SchedulesSection({ channels }: { channels: AdminChannel[
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">Start</span>
+          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-content-muted">Start</span>
           <input
             type="time"
             value={startTime}
             onChange={(e) => setStartTime(e.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-white focus:border-accent/40 focus:outline-none"
+            className="w-full rounded-lg border border-white/10 bg-surface-overlay px-3 py-2.5 text-sm text-white transition-colors focus:border-accent/50 focus:outline-none"
           />
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">End</span>
+          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-content-muted">End</span>
           <input
             type="time"
             value={endTime}
             onChange={(e) => setEndTime(e.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-white focus:border-accent/40 focus:outline-none"
+            className="w-full rounded-lg border border-white/10 bg-surface-overlay px-3 py-2.5 text-sm text-white transition-colors focus:border-accent/50 focus:outline-none"
           />
         </label>
 
         <div className="block lg:col-span-1">
-          <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">Days</span>
+          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-content-muted">Days</span>
           <div className="flex flex-wrap gap-1">
             {DAYS.map(([key, label]) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => toggleDay(key)}
-                className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                aria-pressed={days.has(key)}
+                className={cn(
+                  "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
                   days.has(key)
                     ? "bg-accent text-white"
-                    : "bg-surface-overlay text-gray-400 hover:text-white"
-                }`}
+                    : "bg-surface-overlay text-content-faint hover:text-white"
+                )}
               >
                 {label}
               </button>
@@ -172,20 +176,16 @@ export default function SchedulesSection({ channels }: { channels: AdminChannel[
         </div>
 
         <div className="flex items-end">
-          <button
-            type="submit"
-            disabled={busy || !contentId}
-            className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
-          >
+          <Button type="submit" loading={busy} disabled={!contentId} className="w-full">
             {busy ? "Adding…" : "Add schedule"}
-          </button>
+          </Button>
         </div>
       </form>
 
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-surface-raised">
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-surface-raised shadow-card">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/10 text-left text-xs uppercase tracking-wide text-gray-500">
+            <tr className="border-b border-white/10 bg-white/[0.02] text-left text-xs uppercase tracking-wide text-content-faint">
               <th className="px-4 py-3 font-medium">Channel</th>
               <th className="px-4 py-3 font-medium">Window</th>
               <th className="px-4 py-3 font-medium">Days</th>
@@ -195,37 +195,38 @@ export default function SchedulesSection({ channels }: { channels: AdminChannel[
           </thead>
           <tbody>
             {schedules.map((s) => (
-              <tr key={s.id} className="border-b border-white/5 last:border-0">
+              <tr key={s.id} className="border-b border-white/5 transition-colors last:border-0 hover:bg-white/[0.03]">
                 <td className="px-4 py-3 font-medium text-white">{labelFor(s.contentId)}</td>
-                <td className="px-4 py-3 font-mono text-xs text-gray-300">
+                <td className="px-4 py-3 font-mono text-xs text-content-muted">
                   {s.startTime} – {s.endTime}
                 </td>
-                <td className="px-4 py-3 text-xs text-gray-400">{formatDays(s.daysOfWeek)}</td>
+                <td className="px-4 py-3 text-xs text-content-faint">{formatDays(s.daysOfWeek)}</td>
                 <td className="px-4 py-3">
                   <button
                     type="button"
                     onClick={() => handleToggle(s)}
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                      s.enabled ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-gray-400"
-                    }`}
+                    aria-pressed={s.enabled}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide transition-colors",
+                      s.enabled
+                        ? "border-success/30 bg-success/15 text-success-soft"
+                        : "border-white/10 bg-white/5 text-content-muted hover:text-white"
+                    )}
                   >
+                    <span className={cn("h-1.5 w-1.5 rounded-full", s.enabled ? "bg-success-soft" : "bg-content-faint")} />
                     {s.enabled ? "On" : "Off"}
                   </button>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(s.id)}
-                    className="rounded-md border border-red-500/30 px-2.5 py-1 text-xs text-red-300 transition-colors hover:bg-red-500/10"
-                  >
+                  <Button size="sm" variant="danger" onClick={() => handleDelete(s.id)}>
                     Delete
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ))}
             {schedules.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={5} className="px-4 py-10 text-center text-content-faint">
                   No schedules yet.
                 </td>
               </tr>

@@ -81,7 +81,7 @@ export default function HlsPlayer({ src, fill = false }: { src: string; fill?: b
         }
       />
       {error && (
-        <div className="absolute inset-x-0 bottom-0 bg-black/70 px-3 py-2 text-center text-xs text-amber-200">
+        <div className="absolute inset-x-0 bottom-0 bg-black/70 px-3 py-2 text-center text-xs text-warn-soft">
           {error}
         </div>
       )}

@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 
 type ToastType = "error" | "success" | "info";
@@ -21,11 +22,12 @@ export function useToast(): ToastCtx {
 }
 
 let counter = 0;
+const DURATION_MS = 5000;
 
 const STYLES: Record<ToastType, string> = {
-  error: "border-red-500/40 bg-red-950/80 text-red-100",
-  success: "border-emerald-500/40 bg-emerald-950/80 text-emerald-100",
-  info: "border-white/15 bg-surface-overlay/95 text-gray-100",
+  error: "border-danger/40 bg-danger/10 text-danger-soft",
+  success: "border-success/40 bg-success/10 text-success-soft",
+  info: "border-white/15 bg-surface-overlay/90 text-content",
 };
 
 const ICONS: Record<ToastType, ReactNode> = {
@@ -57,35 +59,49 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (message: string, type: ToastType = "error") => {
       const id = ++counter;
       setToasts((list) => [...list, { id, message, type }]);
-      window.setTimeout(() => dismiss(id), 5000);
+      window.setTimeout(() => dismiss(id), DURATION_MS);
     },
-    [dismiss],
+    [dismiss]
   );
 
   return (
     <Ctx.Provider value={{ notify }}>
       {children}
       <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-full max-w-sm flex-col gap-2">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            role="status"
-            className={`pointer-events-auto flex items-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm shadow-lg backdrop-blur-md ${STYLES[t.type]}`}
-          >
-            {ICONS[t.type]}
-            <span className="flex-1 leading-snug">{t.message}</span>
-            <button
-              type="button"
-              onClick={() => dismiss(t.id)}
-              aria-label="Dismiss"
-              className="shrink-0 text-current/60 transition-opacity hover:opacity-100"
+        <AnimatePresence initial={false}>
+          {toasts.map((t) => (
+            <motion.div
+              key={t.id}
+              layout
+              initial={{ opacity: 0, x: 48, scale: 0.92 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 48, scale: 0.92 }}
+              transition={{ type: "spring", stiffness: 420, damping: 32 }}
+              role="status"
+              className={`pointer-events-auto relative flex items-start gap-2.5 overflow-hidden rounded-xl border px-3.5 py-2.5 text-sm shadow-pop backdrop-blur-md ${STYLES[t.type]}`}
             >
-              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
-                <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
-              </svg>
-            </button>
-          </div>
-        ))}
+              {ICONS[t.type]}
+              <span className="flex-1 leading-snug">{t.message}</span>
+              <button
+                type="button"
+                onClick={() => dismiss(t.id)}
+                aria-label="Dismiss"
+                className="shrink-0 text-current opacity-60 transition-opacity hover:opacity-100"
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
+                  <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                </svg>
+              </button>
+              {/* Auto-dismiss countdown */}
+              <motion.span
+                initial={{ scaleX: 1 }}
+                animate={{ scaleX: 0 }}
+                transition={{ duration: DURATION_MS / 1000, ease: "linear" }}
+                className="absolute bottom-0 left-0 h-0.5 w-full origin-left bg-current/40"
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </Ctx.Provider>
   );

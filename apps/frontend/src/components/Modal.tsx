@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { motion } from "framer-motion";
+import { useEffect, useRef, type ReactNode } from "react";
 
 interface ModalProps {
   title: ReactNode;
@@ -17,12 +18,16 @@ const SIZES: Record<NonNullable<ModalProps["size"]>, string> = {
 };
 
 export default function Modal({ title, onClose, children, actions, size = "lg" }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
+    // Move focus into the dialog for keyboard users.
+    panelRef.current?.focus();
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
@@ -31,13 +36,25 @@ export default function Modal({ title, onClose, children, actions, size = "lg" }
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
-      <div
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.2 }}
+        className="absolute inset-0 bg-black/70 backdrop-blur-md"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <motion.div
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        className={`relative z-10 flex max-h-[90vh] w-full ${SIZES[size]} flex-col overflow-hidden rounded-xl border border-white/10 bg-surface-raised shadow-2xl`}
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 320, damping: 30 }}
+        className={`relative z-10 flex max-h-[90vh] w-full ${SIZES[size]} flex-col overflow-hidden rounded-2xl border border-white/10 bg-surface-raised shadow-pop focus:outline-none`}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-gradient-to-r from-surface-overlay/60 to-transparent px-4 py-3">
           <h2 className="min-w-0 truncate text-sm font-semibold text-white">{title}</h2>
           <div className="flex shrink-0 items-center gap-2">
             {actions}
@@ -45,7 +62,7 @@ export default function Modal({ title, onClose, children, actions, size = "lg" }
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="rounded-md border border-white/10 p-1.5 text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
+              className="rounded-md border border-white/10 p-1.5 text-content-muted transition-colors hover:bg-white/5 hover:text-white"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -62,7 +79,7 @@ export default function Modal({ title, onClose, children, actions, size = "lg" }
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto">{children}</div>
-      </div>
+      </motion.div>
     </div>
   );
 }

@@ -4,13 +4,56 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import CategoryTabs from "@/components/CategoryTabs";
 import ContentCard from "@/components/ContentCard";
+import ContentRail from "@/components/ContentRail";
 import ErrorBanner from "@/components/ErrorBanner";
+import Hero from "@/components/Hero";
 import LoadingGrid from "@/components/LoadingGrid";
 import RequireAuth from "@/components/RequireAuth";
+import Skeleton from "@/components/ui/Skeleton";
 import { getTestVideos } from "@/lib/api";
 import { resolveTestVideos, TEST_VIDEOS } from "@/lib/test-items";
 import { useSearch } from "@/lib/search-context";
 import type { ApiError, ContentItem, DashboardSection } from "@/lib/types";
+
+interface Rail {
+  key: string;
+  title: string;
+  items: ContentItem[];
+}
+
+/** Group a tab's items into titled rails. */
+function buildRails(items: ContentItem[], tab: DashboardSection): Rail[] {
+  if (tab === "live") {
+    const supersport = items.filter((i) => i.title.startsWith("SuperSport"));
+    const others = items.filter((i) => !i.title.startsWith("SuperSport"));
+    return [
+      { key: "supersport", title: "SuperSport", items: supersport },
+      { key: "international", title: "International", items: others },
+    ].filter((r) => r.items.length > 0);
+  }
+  // Shows: group by category.
+  const byCategory = new Map<string, ContentItem[]>();
+  for (const item of items) {
+    const key = item.category || "Shows";
+    const bucket = byCategory.get(key);
+    if (bucket) bucket.push(item);
+    else byCategory.set(key, [item]);
+  }
+  return Array.from(byCategory.entries()).map(([title, catItems]) => ({
+    key: title,
+    title,
+    items: catItems,
+  }));
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-10">
+      <Skeleton className="h-[58vh] min-h-[400px] max-h-[560px] w-full rounded-3xl" />
+      <LoadingGrid count={6} />
+    </div>
+  );
+}
 
 function DashboardContent() {
   const { search } = useSearch();
@@ -23,7 +66,7 @@ function DashboardContent() {
   // Open playback in a new full-screen tab. The /play page generates keys and
   // starts the restream itself; we open it synchronously on click so popup
   // blockers don't fire while we'd otherwise be awaiting a request.
-  const handleTestWatch = useCallback((item: ContentItem) => {
+  const handleWatch = useCallback((item: ContentItem) => {
     if (!item.manifestHint) {
       setKeysError({
         code: "MANIFEST_REQUIRED",
@@ -59,29 +102,39 @@ function DashboardContent() {
     }
   }, []);
 
-  useEffect(() => { loadContent(); }, [loadContent]);
+  useEffect(() => {
+    loadContent();
+  }, [loadContent]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
+  const liveItems = useMemo(
+    () => items.filter((item) => item.category === "Live" || item.channelTag),
+    [items]
+  );
+  const showItems = useMemo(
+    () => items.filter((item) => item.category !== "Live" && !item.channelTag),
+    [items]
+  );
+  const tabItems = activeTab === "live" ? liveItems : showItems;
+
+  const query = search.trim().toLowerCase();
+  const searchResults = useMemo(() => {
+    if (!query) return [];
+    return tabItems.filter(
       (item) =>
-        item.title.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q) ||
-        item.id.toLowerCase().includes(q) ||
-        (item.channelTag?.toLowerCase().includes(q) ?? false) ||
-        (item.subtitle?.toLowerCase().includes(q) ?? false)
+        item.title.toLowerCase().includes(query) ||
+        item.category.toLowerCase().includes(query) ||
+        item.id.toLowerCase().includes(query) ||
+        (item.channelTag?.toLowerCase().includes(query) ?? false) ||
+        (item.subtitle?.toLowerCase().includes(query) ?? false)
     );
-  }, [items, search]);
+  }, [tabItems, query]);
 
-  const liveItems = filtered.filter((item) => item.category === "Live" || item.channelTag);
-  const showItems = filtered.filter((item) => item.category !== "Live" && !item.channelTag);
-  const displayItems = activeTab === "live" ? liveItems : showItems;
+  const featured = useMemo(() => tabItems.filter((i) => i.image).slice(0, 6), [tabItems]);
+  const rails = useMemo(() => buildRails(tabItems, activeTab), [tabItems, activeTab]);
 
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
-      {/* Tabs */}
-      <div className="mb-6">
+      <div className="mb-6 flex items-center justify-between gap-4">
         <CategoryTabs active={activeTab} onChange={setActiveTab} />
       </div>
 
@@ -89,26 +142,52 @@ function DashboardContent() {
       <ErrorBanner error={keysError} onDismiss={() => setKeysError(null)} />
 
       {loading ? (
-        <LoadingGrid />
-      ) : displayItems.length === 0 ? (
-        <div className="rounded-xl border border-white/10 bg-surface-raised px-6 py-16 text-center">
-          <p className="text-gray-400">
-            {search ? `No results for "${search}".` : "No content available."}
-          </p>
+        <DashboardSkeleton />
+      ) : query ? (
+        /* Search results */
+        searchResults.length === 0 ? (
+          <div className="rounded-2xl border border-white/10 bg-surface-raised/60 px-6 py-20 text-center">
+            <p className="text-content-muted">No results for &ldquo;{search}&rdquo;.</p>
+          </div>
+        ) : (
+          <div>
+            <p className="mb-4 text-sm text-content-faint">
+              {searchResults.length} result{searchResults.length === 1 ? "" : "s"} for &ldquo;
+              {search}&rdquo;
+            </p>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {searchResults.map((item) => (
+                <ContentCard
+                  key={`${item.contentType}-${item.id}`}
+                  item={item}
+                  onWatch={handleWatch}
+                />
+              ))}
+            </div>
+          </div>
+        )
+      ) : tabItems.length === 0 ? (
+        <div className="rounded-2xl border border-white/10 bg-surface-raised/60 px-6 py-20 text-center">
+          <p className="text-content-muted">No content available.</p>
         </div>
       ) : (
-        <div className={
-          activeTab === "live"
-            ? "grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7"
-            : "grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
-        }>
-          {displayItems.map((item) => (
-            <ContentCard
-              key={`${item.contentType}-${item.id}`}
-              item={item}
-              onWatch={handleTestWatch}
-            />
-          ))}
+        /* Browse: hero + rails */
+        <div className="space-y-10">
+          {featured.length > 0 && (
+            <div className="animate-fade-in">
+              <Hero items={featured} onPlay={handleWatch} />
+            </div>
+          )}
+          <div className="space-y-10">
+            {rails.map((rail) => (
+              <ContentRail
+                key={rail.key}
+                title={rail.title}
+                items={rail.items}
+                onWatch={handleWatch}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>

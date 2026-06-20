@@ -1,23 +1,23 @@
+import Skeleton from "@/components/ui/Skeleton";
+
 interface LoadingGridProps {
   count?: number;
 }
 
-export default function LoadingGrid({ count = 8 }: LoadingGridProps) {
+/** Shimmering card placeholders matching ContentCard's shape. */
+export default function LoadingGrid({ count = 10 }: LoadingGridProps) {
   return (
     <div
-      className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+      className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
       aria-busy="true"
       aria-label="Loading content"
     >
       {Array.from({ length: count }).map((_, index) => (
-        <div
-          key={index}
-          className="overflow-hidden rounded-xl border border-white/10 bg-surface-raised"
-        >
-          <div className="aspect-video w-full animate-pulse bg-white/5" />
-          <div className="space-y-2 p-4">
-            <div className="h-4 w-3/4 animate-pulse rounded bg-white/10" />
-            <div className="h-3 w-1/2 animate-pulse rounded bg-white/5" />
+        <div key={index}>
+          <Skeleton className="aspect-video w-full rounded-xl" />
+          <div className="mt-2.5 space-y-2 px-0.5">
+            <Skeleton className="h-3.5 w-3/4 rounded" />
+            <Skeleton className="h-2.5 w-1/2 rounded" />
           </div>
         </div>
       ))}

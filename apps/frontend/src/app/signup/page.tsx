@@ -4,7 +4,29 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import AuthShell from "@/components/AuthShell";
+import Button from "@/components/ui/Button";
+import Field from "@/components/ui/Field";
+import PasswordField from "@/components/ui/PasswordField";
 import { useAuth } from "@/lib/auth";
+
+function MailIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="m3.5 7 8.5 6 8.5-6" />
+    </svg>
+  );
+}
+
+function UserIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 20a7 7 0 0 1 14 0" />
+    </svg>
+  );
+}
 
 export default function SignupPage() {
   const { signup, user, loading } = useAuth();
@@ -14,6 +36,7 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [pwError, setPwError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -23,8 +46,9 @@ export default function SignupPage() {
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
+    setPwError(null);
     if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+      setPwError("Password must be at least 8 characters.");
       return;
     }
     setSubmitting(true);
@@ -39,79 +63,69 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col px-4 py-16">
-      <div className="rounded-2xl border border-white/10 bg-surface-raised p-6 shadow-2xl shadow-black/40">
-        <h1 className="text-xl font-semibold text-white">Create your account</h1>
-        <p className="mt-1 text-sm text-gray-400">Sign up to start watching on StreamHub.</p>
-
-        {error && (
-          <div
-            role="alert"
-            className="mt-4 rounded-lg border border-red-500/30 bg-red-950/30 px-3 py-2 text-sm text-red-200"
-          >
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">
-              Name <span className="text-gray-600">(optional)</span>
-            </span>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(event) => setDisplayName(event.target.value)}
-              autoComplete="name"
-              className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
-            />
-          </label>
-
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">
-              Email
-            </span>
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoComplete="email"
-              required
-              className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
-            />
-          </label>
-
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">
-              Password <span className="text-gray-600">(min 8 characters)</span>
-            </span>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="new-password"
-              minLength={8}
-              required
-              className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
-            />
-          </label>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
-          >
-            {submitting ? "Creating account…" : "Create account"}
-          </button>
-        </form>
-
-        <p className="mt-4 text-center text-sm text-gray-400">
+    <AuthShell
+      title="Create your account"
+      subtitle="Sign up to start watching on StreamHub."
+      footer={
+        <>
           Already have an account?{" "}
-          <Link href="/login" className="text-accent hover:underline">
+          <Link href="/login" className="font-medium text-accent-soft hover:underline">
             Sign in
           </Link>
-        </p>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {error && (
+        <div
+          role="alert"
+          className="mb-4 animate-fade-in rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger-soft"
+        >
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Field
+          label={
+            <>
+              Name <span className="font-normal lowercase text-content-faint">(optional)</span>
+            </>
+          }
+          type="text"
+          value={displayName}
+          onChange={(event) => setDisplayName(event.target.value)}
+          autoComplete="name"
+          leftIcon={<UserIcon />}
+          placeholder="Jane Doe"
+        />
+        <Field
+          label="Email"
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          autoComplete="email"
+          required
+          leftIcon={<MailIcon />}
+          placeholder="you@example.com"
+        />
+        <PasswordField
+          label={
+            <>
+              Password <span className="font-normal lowercase text-content-faint">(min 8 characters)</span>
+            </>
+          }
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          autoComplete="new-password"
+          minLength={8}
+          required
+          error={pwError}
+          placeholder="••••••••"
+        />
+        <Button type="submit" loading={submitting} size="lg" className="w-full">
+          {submitting ? "Creating account…" : "Create account"}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

@@ -9,11 +9,12 @@
     "lint": "node scripts/next-cli.js lint"
   },
   "dependencies": {
+    "dashjs": "^4.7.0",
+    "framer-motion": "^12.40.0",
+    "hls.js": "^1.5.0",
     "next": "^14.2.0",
     "react": "^18.3.0",
-    "react-dom": "^18.3.0",
-    "dashjs": "^4.7.0",
-    "hls.js": "^1.5.0"
+    "react-dom": "^18.3.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

@@ -1,14 +1,13 @@
 "use client";
 
+import Tabs, { type TabItem } from "@/components/ui/Tabs";
 import type { DashboardSection } from "@/lib/types";
 
-const TABS: { id: DashboardSection; label: string; icon: React.ReactNode }[] = [
+const TABS: TabItem<DashboardSection>[] = [
   {
     id: "live",
     label: "Live TV",
-    icon: (
-      <span className="inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
-    ),
+    icon: <span className="inline-flex h-1.5 w-1.5 rounded-full bg-live animate-pulse-live" />,
   },
   {
     id: "shows",
@@ -28,22 +27,12 @@ interface CategoryTabsProps {
 
 export default function CategoryTabs({ active, onChange }: CategoryTabsProps) {
   return (
-    <nav className="flex gap-1" aria-label="Content category">
-      {TABS.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          onClick={() => onChange(tab.id)}
-          className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-            active === tab.id
-              ? "bg-accent text-white"
-              : "bg-surface-overlay text-gray-300 hover:bg-white/10 hover:text-white"
-          }`}
-        >
-          {tab.icon}
-          {tab.label}
-        </button>
-      ))}
-    </nav>
+    <Tabs
+      items={TABS}
+      active={active}
+      onChange={onChange}
+      layoutId="category-tabs"
+      aria-label="Content category"
+    />
   );
 }
