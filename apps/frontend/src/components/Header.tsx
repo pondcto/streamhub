@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useSearch } from "@/lib/search-context";
 import SearchBar from "@/components/SearchBar";
@@ -8,6 +9,10 @@ import SearchBar from "@/components/SearchBar";
 export default function Header() {
   const { user, loading, logout } = useAuth();
   const { search, setSearch } = useSearch();
+  const pathname = usePathname();
+
+  // The admin page has its own table-scoped search; hide the global one there.
+  const showSearch = !pathname?.startsWith("/admin");
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-surface/80 backdrop-blur-md">
@@ -31,13 +36,15 @@ export default function Header() {
           </span>
         </a>
 
-        {/* Center: search */}
+        {/* Center: search (hidden on admin) */}
         <div className="mx-auto w-full max-w-lg">
-          <SearchBar
-            value={search}
-            onChange={setSearch}
-            placeholder="Search channels, shows…"
-          />
+          {showSearch && (
+            <SearchBar
+              value={search}
+              onChange={setSearch}
+              placeholder="Search channels, shows…"
+            />
+          )}
         </div>
 
         {/* Right: user actions */}

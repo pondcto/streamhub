@@ -1,13 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import HlsPlayer from "@/components/HlsPlayer";
+import Modal from "@/components/Modal";
 import RequireAuth from "@/components/RequireAuth";
 import SchedulesSection from "@/components/SchedulesSection";
+import { ToastProvider, useToast } from "@/components/Toast";
 import { downloadLogs, fetchLogs, listChannels, startChannel, stopChannel } from "@/lib/admin-api";
 import { resolveHlsUrl } from "@/lib/stream-api";
+import { TEST_VIDEOS } from "@/lib/test-items";
 import type { AdminChannel } from "@/lib/types";
+
+const PAGE_SIZE = 10;
+
+// Channel number + display name live in the frontend test catalog, keyed by the
+// same id the admin API returns as contentId.
+const META = new Map(TEST_VIDEOS.map((v) => [v.id, v]));
+function numberFor(ch: AdminChannel): string {
+  return META.get(ch.contentId)?.channelNumber ?? "—";
+}
+function nameFor(ch: AdminChannel): string {
+  return META.get(ch.contentId)?.title ?? ch.title ?? ch.channelTag ?? ch.contentId;
+}
+
+type StatusFilter = "all" | "running" | "stopped";
 
 function StatCard({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
   return (
@@ -28,20 +45,27 @@ function StatusBadge({ running }: { running: boolean }) {
       }`}
     >
       <span
-        className={`inline-flex h-1.5 w-1.5 rounded-full ${
-          running ? "bg-emerald-400" : "bg-gray-500"
-        }`}
+        className={`inline-flex h-1.5 w-1.5 rounded-full ${running ? "bg-emerald-400" : "bg-gray-500"}`}
       />
       {running ? "Running" : "Stopped"}
     </span>
   );
 }
 
-function AdminContent() {
-  const [channels, setChannels] = useState<AdminChannel[]>([]);
-  const [error, setError] = useState<string | null>(null);
+function ChannelsTab({
+  channels,
+  refresh,
+}: {
+  channels: AdminChannel[];
+  refresh: () => Promise<void>;
+}) {
+  const { notify } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [page, setPage] = useState(1);
+
+  const [logChannel, setLogChannel] = useState<string | null>(null);
   const [logText, setLogText] = useState("");
   const [preview, setPreview] = useState<{ contentId: string; url: string } | null>(null);
   const logOffset = useRef(0);
@@ -51,32 +75,16 @@ function AdminContent() {
   const running = channels.filter((c) => c.running).length;
   const captured = channels.filter((c) => c.hasManifest).length;
 
-  const refresh = useCallback(async () => {
-    try {
-      const data = await listChannels();
-      setChannels(data.channels);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load channels.");
-    }
-  }, []);
-
+  // Poll the open log modal's tail.
   useEffect(() => {
-    refresh();
-    const timer = window.setInterval(refresh, 5000);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
-
-  // Poll the selected channel's log tail.
-  useEffect(() => {
-    if (!selected) return;
+    if (!logChannel) return;
     logOffset.current = 0;
     setLogText("");
     let active = true;
 
     async function poll() {
       try {
-        const chunk = await fetchLogs(selected!, logOffset.current);
+        const chunk = await fetchLogs(logChannel!, logOffset.current);
         if (!active || !chunk.content) return;
         logOffset.current = chunk.offset;
         setLogText((prev) => (prev + chunk.content).slice(-60000));
@@ -91,7 +99,7 @@ function AdminContent() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [selected]);
+  }, [logChannel]);
 
   useEffect(() => {
     if (logBoxRef.current) {
@@ -102,72 +110,120 @@ function AdminContent() {
   const act = useCallback(
     async (contentId: string, action: "start" | "stop") => {
       setBusy(contentId);
-      setError(null);
       try {
         await (action === "start" ? startChannel(contentId) : stopChannel(contentId));
         await refresh();
+        notify(
+          `${action === "start" ? "Started" : "Stopped"} ${nameFor(
+            channels.find((c) => c.contentId === contentId) ?? ({ contentId } as AdminChannel),
+          )}.`,
+          "success",
+        );
       } catch (err) {
-        setError(err instanceof Error ? err.message : `Failed to ${action} ${contentId}.`);
+        notify(err instanceof Error ? err.message : `Failed to ${action} ${contentId}.`, "error");
       } finally {
         setBusy(null);
       }
     },
-    [refresh]
+    [refresh, notify, channels],
   );
 
+  // Filter + paginate.
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return channels.filter((ch) => {
+      if (statusFilter === "running" && !ch.running) return false;
+      if (statusFilter === "stopped" && ch.running) return false;
+      if (!q) return true;
+      return (
+        numberFor(ch).toLowerCase().includes(q) ||
+        nameFor(ch).toLowerCase().includes(q) ||
+        ch.contentId.toLowerCase().includes(q) ||
+        (ch.channelTag?.toLowerCase().includes(q) ?? false)
+      );
+    });
+  }, [channels, search, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const firstRow = filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const lastRow = Math.min(currentPage * PAGE_SIZE, filtered.length);
+
+  // Reset to first page when the filter set changes.
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter]);
+
   return (
-    <div className="w-full px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Admin · Channel control</h1>
-        <p className="mt-1 text-sm text-gray-400">
-          Start and stop channel restreams and watch their logs.
-        </p>
-      </div>
-
-      {error && (
-        <div className="mb-4 rounded-lg border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-200">
-          {error}
-        </div>
-      )}
-
+    <>
       <div className="mb-6 grid grid-cols-3 gap-3 sm:max-w-md">
         <StatCard label="Channels" value={total} />
         <StatCard label="Running" value={running} accent />
         <StatCard label="Captured" value={captured} />
       </div>
 
+      {/* Toolbar: search + filter */}
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+            <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="h-4 w-4" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35m1.85-4.4a6.25 6.25 0 1 1-12.5 0 6.25 6.25 0 0 1 12.5 0Z" />
+            </svg>
+          </span>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by number, name, or Content ID…"
+            className="w-full rounded-lg border border-white/10 bg-surface-raised py-2 pl-10 pr-3 text-sm text-white placeholder:text-gray-500 focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+          className="rounded-lg border border-white/10 bg-surface-raised px-3 py-2 text-sm text-white focus:border-accent/40 focus:outline-none sm:w-44"
+        >
+          <option value="all">All statuses</option>
+          <option value="running">Running</option>
+          <option value="stopped">Stopped</option>
+        </select>
+      </div>
+
       <div className="overflow-hidden rounded-xl border border-white/10 bg-surface-raised">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/10 text-left text-xs uppercase tracking-wide text-gray-500">
-              <th className="px-4 py-3 font-medium">Channel</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Manifest</th>
-              <th className="px-4 py-3 font-medium">PID</th>
-              <th className="px-4 py-3 text-right font-medium">Actions</th>
+              <th className="px-4 py-2 font-medium">No.</th>
+              <th className="px-4 py-2 font-medium">Channel</th>
+              <th className="px-4 py-2 font-medium">Content ID</th>
+              <th className="px-4 py-2 font-medium">Status</th>
+              <th className="px-4 py-2 text-right font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {channels.map((ch) => (
-              <tr key={ch.contentId} className="border-b border-white/5 last:border-0">
-                <td className="px-4 py-3">
-                  <div className="font-medium text-white">{ch.channelTag || ch.contentId}</div>
-                  {ch.title && <div className="text-xs text-gray-500">{ch.title}</div>}
+            {pageItems.map((ch) => (
+              <tr key={ch.contentId} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
+                <td className="px-4 py-1.5">
+                  <span className="font-mono text-lg font-bold text-white">{numberFor(ch)}</span>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-1.5">
+                  <span className="text-base font-semibold text-white">{nameFor(ch)}</span>
+                  {!ch.hasManifest && (
+                    <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 align-middle text-[10px] font-medium text-amber-300">
+                      no capture
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-1.5 font-mono text-xs text-gray-400">{ch.contentId}</td>
+                <td className="px-4 py-1.5">
                   <StatusBadge running={ch.running} />
                 </td>
-                <td className="px-4 py-3">
-                  <span className={ch.hasManifest ? "text-emerald-300" : "text-amber-300"}>
-                    {ch.hasManifest ? "captured" : "missing"}
-                  </span>
-                </td>
-                <td className="px-4 py-3 font-mono text-xs text-gray-400">{ch.pid ?? "—"}</td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-1.5">
                   <div className="flex items-center justify-end gap-2">
                     <button
                       type="button"
-                      onClick={() => setSelected(ch.contentId)}
+                      onClick={() => setLogChannel(ch.contentId)}
                       className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
                     >
                       Logs
@@ -210,70 +266,144 @@ function AdminContent() {
                 </td>
               </tr>
             ))}
-            {channels.length === 0 && (
+            {filtered.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
-                  No channels.
+                  {search || statusFilter !== "all" ? "No channels match your filters." : "No channels."}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+
+        {/* Pagination footer */}
+        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-2.5 text-xs text-gray-400">
+          <span>
+            {filtered.length === 0
+              ? "No results"
+              : `Showing ${firstRow}–${lastRow} of ${filtered.length}`}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={currentPage <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="rounded-md border border-white/10 px-2 py-1 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <span className="px-2 tabular-nums">
+              Page {currentPage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={currentPage >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="rounded-md border border-white/10 px-2 py-1 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
 
-      {selected && (
-        <div className="mt-6 overflow-hidden rounded-xl border border-white/10 bg-surface-raised">
-          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-            <h2 className="text-sm font-semibold text-white">
-              Logs · <span className="font-mono text-gray-400">{selected}</span>
-            </h2>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => downloadLogs(selected)}
-                className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-gray-300 hover:bg-white/5 hover:text-white"
-              >
-                Download
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-gray-300 hover:bg-white/5 hover:text-white"
-              >
-                Close
-              </button>
-            </div>
-          </div>
+      {/* Logs modal */}
+      {logChannel && (
+        <Modal
+          title={<>Logs · <span className="font-mono text-gray-400">{logChannel}</span></>}
+          onClose={() => setLogChannel(null)}
+          size="xl"
+          actions={
+            <button
+              type="button"
+              onClick={() => downloadLogs(logChannel)}
+              className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
+            >
+              Download
+            </button>
+          }
+        >
           <pre
             ref={logBoxRef}
-            className="max-h-80 overflow-auto bg-black/40 p-4 font-mono text-[11px] leading-relaxed text-gray-300"
+            className="max-h-[70vh] overflow-auto bg-black/40 p-4 font-mono text-[11px] leading-relaxed text-gray-300"
           >
             {logText || "Waiting for log output…"}
           </pre>
-        </div>
+        </Modal>
       )}
 
+      {/* Preview modal */}
       {preview && (
-        <div className="mt-6 overflow-hidden rounded-xl border border-white/10 bg-surface-raised">
-          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-            <h2 className="text-sm font-semibold text-white">
-              Preview · <span className="font-mono text-gray-400">{preview.contentId}</span>
-            </h2>
-            <button
-              type="button"
-              onClick={() => setPreview(null)}
-              className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-gray-300 hover:bg-white/5 hover:text-white"
-            >
-              Close
-            </button>
-          </div>
+        <Modal
+          title={<>Preview · <span className="font-mono text-gray-400">{preview.contentId}</span></>}
+          onClose={() => setPreview(null)}
+          size="xl"
+        >
           <div className="p-4">
             <HlsPlayer src={preview.url} />
           </div>
-        </div>
+        </Modal>
       )}
+    </>
+  );
+}
 
-      <SchedulesSection channels={channels} />
+type AdminTab = "channels" | "schedule";
+
+function AdminContent() {
+  const { notify } = useToast();
+  const [channels, setChannels] = useState<AdminChannel[]>([]);
+  const [tab, setTab] = useState<AdminTab>("channels");
+  const healthyRef = useRef(true);
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await listChannels();
+      setChannels(data.channels);
+      healthyRef.current = true;
+    } catch (err) {
+      // Only toast on the first failure of a streak (background poll runs every 5s).
+      if (healthyRef.current) {
+        notify(err instanceof Error ? err.message : "Failed to load channels.", "error");
+        healthyRef.current = false;
+      }
+    }
+  }, [notify]);
+
+  useEffect(() => {
+    refresh();
+    const timer = window.setInterval(refresh, 5000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
+  const tabClass = (active: boolean) =>
+    `rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+      active ? "bg-accent text-white" : "bg-surface-overlay text-gray-300 hover:bg-white/10 hover:text-white"
+    }`;
+
+  return (
+    <div className="w-full px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white">Admin</h1>
+        <p className="mt-1 text-sm text-gray-400">
+          Manage channel restreams and automatic schedules.
+        </p>
+      </div>
+
+      <div className="mb-6 flex gap-2">
+        <button type="button" className={tabClass(tab === "channels")} onClick={() => setTab("channels")}>
+          Channel Management
+        </button>
+        <button type="button" className={tabClass(tab === "schedule")} onClick={() => setTab("schedule")}>
+          Schedule
+        </button>
+      </div>
+
+      {tab === "channels" ? (
+        <ChannelsTab channels={channels} refresh={refresh} />
+      ) : (
+        <SchedulesSection channels={channels} />
+      )}
     </div>
   );
 }
@@ -281,7 +411,9 @@ function AdminContent() {
 export default function AdminPage() {
   return (
     <RequireAuth admin>
-      <AdminContent />
+      <ToastProvider>
+        <AdminContent />
+      </ToastProvider>
     </RequireAuth>
   );
 }

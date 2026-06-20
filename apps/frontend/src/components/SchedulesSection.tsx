@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { createSchedule, deleteSchedule, listSchedules, updateSchedule } from "@/lib/admin-api";
+import { useToast } from "@/components/Toast";
 import type { AdminChannel, Schedule } from "@/lib/types";
 
 const DAYS: [string, string][] = [
@@ -25,8 +26,8 @@ function formatDays(value: string): string {
 }
 
 export default function SchedulesSection({ channels }: { channels: AdminChannel[] }) {
+  const { notify } = useToast();
   const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const [contentId, setContentId] = useState("");
@@ -37,11 +38,10 @@ export default function SchedulesSection({ channels }: { channels: AdminChannel[
   const refresh = useCallback(async () => {
     try {
       setSchedules(await listSchedules());
-      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load schedules.");
+      notify(err instanceof Error ? err.message : "Failed to load schedules.", "error");
     }
-  }, []);
+  }, [notify]);
 
   useEffect(() => {
     refresh();
@@ -64,7 +64,6 @@ export default function SchedulesSection({ channels }: { channels: AdminChannel[
     event.preventDefault();
     if (!contentId) return;
     setBusy(true);
-    setError(null);
     try {
       await createSchedule({
         contentId,
@@ -74,30 +73,29 @@ export default function SchedulesSection({ channels }: { channels: AdminChannel[
         enabled: true,
       });
       await refresh();
+      notify("Schedule added.", "success");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add schedule.");
+      notify(err instanceof Error ? err.message : "Failed to add schedule.", "error");
     } finally {
       setBusy(false);
     }
   }
 
   async function handleDelete(id: number) {
-    setError(null);
     try {
       await deleteSchedule(id);
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete schedule.");
+      notify(err instanceof Error ? err.message : "Failed to delete schedule.", "error");
     }
   }
 
   async function handleToggle(schedule: Schedule) {
-    setError(null);
     try {
       await updateSchedule(schedule.id, { enabled: !schedule.enabled });
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update schedule.");
+      notify(err instanceof Error ? err.message : "Failed to update schedule.", "error");
     }
   }
 
@@ -107,18 +105,12 @@ export default function SchedulesSection({ channels }: { channels: AdminChannel[
   };
 
   return (
-    <div className="mt-8">
+    <div>
       <h2 className="mb-1 text-lg font-semibold text-white">Schedules</h2>
       <p className="mb-3 text-sm text-gray-400">
         Channels auto-start and stop at these times (server timezone). A capture must exist when a
         start fires.
       </p>
-
-      {error && (
-        <div className="mb-4 rounded-lg border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-200">
-          {error}
-        </div>
-      )}
 
       <form
         onSubmit={handleAdd}
