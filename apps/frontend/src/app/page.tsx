@@ -6,12 +6,11 @@ import CategoryTabs from "@/components/CategoryTabs";
 import ContentCard from "@/components/ContentCard";
 import ErrorBanner from "@/components/ErrorBanner";
 import LoadingGrid from "@/components/LoadingGrid";
-import StreamPlaybackModal from "@/components/StreamPlaybackModal";
 import RequireAuth from "@/components/RequireAuth";
-import { generateTestItemKeys, getTestVideos } from "@/lib/api";
+import { getTestVideos } from "@/lib/api";
 import { resolveTestVideos, TEST_VIDEOS } from "@/lib/test-items";
 import { useSearch } from "@/lib/search-context";
-import type { ApiError, ContentItem, DashboardSection, DecryptionKeysResponse } from "@/lib/types";
+import type { ApiError, ContentItem, DashboardSection } from "@/lib/types";
 
 function DashboardContent() {
   const { search } = useSearch();
@@ -19,13 +18,12 @@ function DashboardContent() {
   const [items, setItems] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
-  const [watchLoadingId, setWatchLoadingId] = useState<string | null>(null);
-  const [keysResult, setKeysResult] = useState<DecryptionKeysResponse | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [activeItem, setActiveItem] = useState<ContentItem | null>(null);
   const [keysError, setKeysError] = useState<ApiError | null>(null);
 
-  const handleTestWatch = useCallback(async (item: ContentItem) => {
+  // Open playback in a new full-screen tab. The /play page generates keys and
+  // starts the restream itself; we open it synchronously on click so popup
+  // blockers don't fire while we'd otherwise be awaiting a request.
+  const handleTestWatch = useCallback((item: ContentItem) => {
     if (!item.manifestHint) {
       setKeysError({
         code: "MANIFEST_REQUIRED",
@@ -34,24 +32,15 @@ function DashboardContent() {
       return;
     }
 
-    setWatchLoadingId(item.id);
     setKeysError(null);
-    setKeysResult(null);
-    setActiveItem(item);
-
-    try {
-      const keys = await generateTestItemKeys(item.id);
-      setKeysResult(keys);
-      setModalOpen(true);
-    } catch (err) {
-      setKeysError(err as ApiError);
-      setActiveItem(null);
-    } finally {
-      setWatchLoadingId(null);
-    }
+    const params = new URLSearchParams({ type: item.contentType, title: item.title });
+    if (item.channelTag) params.set("channelTag", item.channelTag);
+    window.open(
+      `/play/${encodeURIComponent(item.id)}?${params.toString()}`,
+      "_blank",
+      "noopener"
+    );
   }, []);
-
-  const closeModal = useCallback(() => setModalOpen(false), []);
 
   const loadContent = useCallback(async () => {
     setLoading(true);
@@ -118,23 +107,10 @@ function DashboardContent() {
               key={`${item.contentType}-${item.id}`}
               item={item}
               onWatch={handleTestWatch}
-              watchLoading={watchLoadingId === item.id}
             />
           ))}
         </div>
       )}
-
-      <StreamPlaybackModal
-        open={modalOpen && Boolean(keysResult)}
-        onClose={closeModal}
-        title={activeItem?.title ?? "Stream"}
-        channelTag={activeItem?.channelTag}
-        contentId={activeItem?.id}
-        contentType={activeItem?.contentType}
-        manifestUrl={keysResult?.manifestUrl ?? ""}
-        licenseUrl={keysResult?.licenseUrl ?? ""}
-        sessionExpiresAt={keysResult?.sessionExpiresAt}
-      />
     </div>
   );
 }

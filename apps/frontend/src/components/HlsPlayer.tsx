@@ -3,8 +3,12 @@
 import Hls from "hls.js";
 import { useEffect, useRef, useState } from "react";
 
-/** Plays an HLS (.m3u8) URL — native on Safari, hls.js elsewhere. */
-export default function HlsPlayer({ src }: { src: string }) {
+/**
+ * Plays an HLS (.m3u8) URL — native on Safari, hls.js elsewhere.
+ * `fill` makes the player occupy its parent (no aspect box / rounding) for
+ * full-screen playback pages.
+ */
+export default function HlsPlayer({ src, fill = false }: { src: string; fill?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,13 +62,23 @@ export default function HlsPlayer({ src }: { src: string }) {
   }, [src]);
 
   return (
-    <div className="relative w-full overflow-hidden rounded-lg bg-black">
+    <div
+      className={
+        fill
+          ? "relative h-full w-full bg-black"
+          : "relative w-full overflow-hidden rounded-lg bg-black"
+      }
+    >
       <video
         ref={videoRef}
         controls
         autoPlay
         playsInline
-        className="aspect-video w-full bg-black"
+        className={
+          fill
+            ? "h-full w-full bg-black object-contain"
+            : "aspect-video w-full bg-black"
+        }
       />
       {error && (
         <div className="absolute inset-x-0 bottom-0 bg-black/70 px-3 py-2 text-center text-xs text-amber-200">
