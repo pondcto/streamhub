@@ -86,3 +86,74 @@ export function updateSchedule(id: number, body: Partial<ScheduleInput>): Promis
 export function deleteSchedule(id: number): Promise<{ id: number; deleted: boolean }> {
   return authed(`/api/admin/schedules/${id}`, { method: "DELETE" });
 }
+
+// --- Add Channel ---------------------------------------------------------
+// TODO(api): the backend has no channel-registration endpoint yet. The static
+// catalog (TEST_VIDEOS + backend test_items) is the source of channels, and a
+// channel additionally needs a captured manifest before it can stream. Once
+// `POST /api/admin/channels` exists, flip BACKEND_READY in AddChannelSection.
+
+export interface NewChannelInput {
+  contentId: string;
+  title?: string;
+  channelTag?: string;
+  channelNumber?: string;
+  category?: string;
+  manifestHint?: string;
+  image?: string;
+}
+
+export function createChannel(body: NewChannelInput): Promise<AdminChannel> {
+  return authed("/api/admin/channels", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+// --- User Management -----------------------------------------------------
+// TODO(api): accounts currently expose only login/signup/me. These admin
+// endpoints don't exist yet; UserManagementSection keeps actions disabled
+// until `GET/POST/PATCH/DELETE /api/admin/users*` are implemented.
+
+export type UserRoleValue = "user" | "admin";
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  display_name: string;
+  role: UserRoleValue;
+  created_at: string;
+  active?: boolean;
+}
+
+export interface NewUserInput {
+  email: string;
+  password: string;
+  display_name?: string;
+  role: UserRoleValue;
+}
+
+export function listUsers(): Promise<{ users: AdminUser[] }> {
+  return authed("/api/admin/users");
+}
+
+export function createUser(body: NewUserInput): Promise<AdminUser> {
+  return authed("/api/admin/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateUserRole(id: number, role: UserRoleValue): Promise<AdminUser> {
+  return authed(`/api/admin/users/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role }),
+  });
+}
+
+export function deleteUser(id: number): Promise<{ id: number; deleted: boolean }> {
+  return authed(`/api/admin/users/${id}`, { method: "DELETE" });
+}

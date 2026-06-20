@@ -1,23 +1,34 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import HlsPlayer from "@/components/HlsPlayer";
 import Modal from "@/components/Modal";
 import RequireAuth from "@/components/RequireAuth";
 import SchedulesSection from "@/components/SchedulesSection";
+import AddChannelSection from "@/components/admin/AddChannelSection";
+import AdminSectionHeader from "@/components/admin/AdminSectionHeader";
+import AdminSidebar, { SECTION_META, type AdminSection } from "@/components/admin/AdminSidebar";
+import SettingsSection from "@/components/admin/SettingsSection";
+import UserManagementSection from "@/components/admin/UserManagementSection";
 import { useToast } from "@/components/Toast";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Field from "@/components/ui/Field";
-import Tabs, { type TabItem } from "@/components/ui/Tabs";
 import { downloadLogs, fetchLogs, listChannels, startChannel, stopChannel } from "@/lib/admin-api";
+import { useAdminPrefs } from "@/lib/admin-prefs";
 import { cn } from "@/lib/cn";
 import { resolveHlsUrl } from "@/lib/stream-api";
 import { TEST_VIDEOS } from "@/lib/test-items";
 import type { AdminChannel } from "@/lib/types";
 
-const PAGE_SIZE = 10;
+const ALL_SECTIONS: AdminSection[] = ["users", "add", "channels", "schedule", "settings"];
+
+function isSection(value: string | null): value is AdminSection {
+  return value != null && (ALL_SECTIONS as string[]).includes(value);
+}
 
 // Channel number + display name live in the frontend test catalog, keyed by the
 // same id the admin API returns as contentId.
@@ -78,6 +89,8 @@ function ChannelsTab({
   refresh: () => Promise<void>;
 }) {
   const { notify } = useToast();
+  const { pageSize, density } = useAdminPrefs();
+  const rowPad = density === "compact" ? "py-1.5" : "py-2.5";
   const [busy, setBusy] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -162,16 +175,16 @@ function ChannelsTab({
     });
   }, [channels, search, statusFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  const firstRow = filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
-  const lastRow = Math.min(currentPage * PAGE_SIZE, filtered.length);
+  const pageItems = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const firstRow = filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const lastRow = Math.min(currentPage * pageSize, filtered.length);
 
-  // Reset to first page when the filter set changes.
+  // Reset to first page when the filter set or page size changes.
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter]);
+  }, [search, statusFilter, pageSize]);
 
   return (
     <>
@@ -219,10 +232,10 @@ function ChannelsTab({
           <tbody>
             {pageItems.map((ch) => (
               <tr key={ch.contentId} className="border-b border-white/5 transition-colors last:border-0 hover:bg-white/[0.03]">
-                <td className="px-4 py-2.5">
+                <td className={cn("px-4", rowPad)}>
                   <span className="font-mono text-lg font-bold text-white">{numberFor(ch)}</span>
                 </td>
-                <td className="px-4 py-2.5">
+                <td className={cn("px-4", rowPad)}>
                   <span className="text-base font-semibold text-white">{nameFor(ch)}</span>
                   {!ch.hasManifest && (
                     <span className="ml-2 align-middle">
@@ -230,11 +243,11 @@ function ChannelsTab({
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-2.5 font-mono text-xs text-content-faint">{ch.contentId}</td>
-                <td className="px-4 py-2.5">
+                <td className={cn("px-4 font-mono text-xs text-content-faint", rowPad)}>{ch.contentId}</td>
+                <td className={cn("px-4", rowPad)}>
                   <StatusBadge running={ch.running} />
                 </td>
-                <td className="px-4 py-2.5">
+                <td className={cn("px-4", rowPad)}>
                   <div className="flex items-center justify-end gap-2">
                     <Button size="sm" variant="secondary" onClick={() => setLogChannel(ch.contentId)}>
                       Logs
@@ -356,18 +369,17 @@ function ChannelsTab({
   );
 }
 
-type AdminTab = "channels" | "schedule";
-
-const ADMIN_TABS: TabItem<AdminTab>[] = [
-  { id: "channels", label: "Channel Management" },
-  { id: "schedule", label: "Schedule" },
-];
-
 function AdminContent() {
   const { notify } = useToast();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const rawTab = searchParams.get("tab");
+  const section: AdminSection = isSection(rawTab) ? rawTab : "channels";
+
   const [channels, setChannels] = useState<AdminChannel[]>([]);
-  const [tab, setTab] = useState<AdminTab>("channels");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const healthyRef = useRef(true);
+  const { pollIntervalSec } = useAdminPrefs();
 
   const refresh = useCallback(async () => {
     try {
@@ -385,34 +397,69 @@ function AdminContent() {
 
   useEffect(() => {
     refresh();
-    const timer = window.setInterval(refresh, 5000);
+    const timer = window.setInterval(refresh, Math.max(1, pollIntervalSec) * 1000);
     return () => window.clearInterval(timer);
-  }, [refresh]);
+  }, [refresh, pollIntervalSec]);
+
+  const runningCount = useMemo(() => channels.filter((c) => c.running).length, [channels]);
+
+  const navigate = useCallback(
+    (id: AdminSection) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("tab", id);
+      router.replace(`/admin?${params.toString()}`, { scroll: false });
+      setMobileNavOpen(false);
+    },
+    [router, searchParams]
+  );
+
+  const meta = SECTION_META[section];
 
   return (
-    <div className="w-full px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-white">Admin</h1>
-        <p className="mt-1 text-sm text-content-muted">
-          Manage channel restreams and automatic schedules.
-        </p>
-      </div>
+    <div className="flex w-full">
+      <AdminSidebar
+        active={section}
+        onNavigate={navigate}
+        runningCount={runningCount}
+        mobileOpen={mobileNavOpen}
+        onCloseMobile={() => setMobileNavOpen(false)}
+      />
 
-      <div className="mb-6">
-        <Tabs<AdminTab>
-          items={ADMIN_TABS}
-          active={tab}
-          onChange={setTab}
-          layoutId="admin-tabs"
-          aria-label="Admin sections"
-        />
-      </div>
+      <div className="min-w-0 flex-1">
+        <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+          {/* Mobile section bar + menu trigger */}
+          <div className="mb-4 flex items-center gap-3 lg:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(true)}
+              aria-label="Open admin menu"
+              className="rounded-lg border border-white/10 bg-surface-raised/70 p-2 text-content-muted transition-colors hover:text-white"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <span className="text-sm font-medium text-white">{meta.label}</span>
+          </div>
 
-      {tab === "channels" ? (
-        <ChannelsTab channels={channels} refresh={refresh} />
-      ) : (
-        <SchedulesSection channels={channels} />
-      )}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={section}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+            >
+              <AdminSectionHeader title={meta.label} description={meta.description} />
+              {section === "channels" && <ChannelsTab channels={channels} refresh={refresh} />}
+              {section === "schedule" && <SchedulesSection channels={channels} />}
+              {section === "add" && <AddChannelSection onCreated={refresh} />}
+              {section === "users" && <UserManagementSection />}
+              {section === "settings" && <SettingsSection />}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </div>
     </div>
   );
 }
@@ -420,7 +467,11 @@ function AdminContent() {
 export default function AdminPage() {
   return (
     <RequireAuth admin>
-      <AdminContent />
+      <Suspense
+        fallback={<div className="px-4 py-8 text-sm text-content-faint sm:px-6 lg:px-8">Loading admin…</div>}
+      >
+        <AdminContent />
+      </Suspense>
     </RequireAuth>
   );
 }
