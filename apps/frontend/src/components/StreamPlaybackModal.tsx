@@ -175,9 +175,20 @@ export default function StreamPlaybackModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
+              aria-label="Close"
+              className="rounded-lg border border-white/10 p-1.5 text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
             >
-              Close
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.8}
+                stroke="currentColor"
+                className="h-4 w-4"
+                aria-hidden="true"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
             </button>
           </div>
         </div>
