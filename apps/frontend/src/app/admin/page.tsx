@@ -41,6 +41,20 @@ function nameFor(ch: AdminChannel): string {
   return META.get(ch.contentId)?.title ?? ch.title ?? ch.channelTag ?? ch.contentId;
 }
 
+// Public-facing HLS endpoint for a channel — e.g. https://live2.mzolotv.com/TS2/TS2.m3u8.
+// Keyed by the channel tag (not the internal restream host). Override the base
+// with NEXT_PUBLIC_PUBLIC_HLS_BASE.
+const PUBLIC_HLS_BASE = process.env.NEXT_PUBLIC_PUBLIC_HLS_BASE ?? "https://live2.mzolotv.com";
+
+function publicStreamUrl(ch: AdminChannel): string | null {
+  // Prefer the channel tag; otherwise recover the <TAG> from an existing
+  // .../<TAG>/<TAG>.m3u8 path.
+  const tagFromPath = (url?: string | null) =>
+    url?.match(/\/([^/]+)\/[^/]+\.m3u8(?:[?#]|$)/)?.[1] ?? null;
+  const tag = ch.channelTag?.trim() || tagFromPath(ch.directHlsUrl) || tagFromPath(ch.hlsUrl);
+  return tag ? `${PUBLIC_HLS_BASE}/${tag}/${tag}.m3u8` : null;
+}
+
 type StatusFilter = "all" | "running" | "stopped";
 
 function StatCard({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
@@ -162,7 +176,7 @@ function ChannelsTab({
 
   const copyUrl = useCallback(
     async (ch: AdminChannel) => {
-      const url = ch.directHlsUrl ?? (ch.hlsUrl ? resolveHlsUrl(ch.hlsUrl) : null);
+      const url = publicStreamUrl(ch);
       if (!url) return;
       const ok = await copyText(url);
       notify(
@@ -267,23 +281,23 @@ function ChannelsTab({
                       Logs
                     </Button>
                     {(ch.directHlsUrl || (ch.running && ch.hlsUrl)) && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() =>
-                            setPreview({
-                              contentId: ch.contentId,
-                              url: ch.directHlsUrl ?? resolveHlsUrl(ch.hlsUrl!),
-                            })
-                          }
-                        >
-                          Preview
-                        </Button>
-                        <Button size="sm" variant="secondary" onClick={() => copyUrl(ch)}>
-                          Copy URL
-                        </Button>
-                      </>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() =>
+                          setPreview({
+                            contentId: ch.contentId,
+                            url: ch.directHlsUrl ?? resolveHlsUrl(ch.hlsUrl!),
+                          })
+                        }
+                      >
+                        Preview
+                      </Button>
+                    )}
+                    {publicStreamUrl(ch) && (
+                      <Button size="sm" variant="secondary" onClick={() => copyUrl(ch)}>
+                        Copy URL
+                      </Button>
                     )}
                     {ch.running ? (
                       <Button
