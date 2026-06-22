@@ -19,6 +19,7 @@ import Button from "@/components/ui/Button";
 import Field from "@/components/ui/Field";
 import { downloadLogs, fetchLogs, listChannels, startChannel, stopChannel } from "@/lib/admin-api";
 import { useAdminPrefs } from "@/lib/admin-prefs";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import { resolveHlsUrl } from "@/lib/stream-api";
 import { TEST_VIDEOS } from "@/lib/test-items";
@@ -159,6 +160,19 @@ function ChannelsTab({
     [refresh, notify, channels],
   );
 
+  const copyUrl = useCallback(
+    async (ch: AdminChannel) => {
+      const url = ch.directHlsUrl ?? (ch.hlsUrl ? resolveHlsUrl(ch.hlsUrl) : null);
+      if (!url) return;
+      const ok = await copyText(url);
+      notify(
+        ok ? "Stream URL copied to clipboard." : "Couldn't copy the URL.",
+        ok ? "success" : "error",
+      );
+    },
+    [notify],
+  );
+
   // Filter + paginate.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -253,18 +267,23 @@ function ChannelsTab({
                       Logs
                     </Button>
                     {(ch.directHlsUrl || (ch.running && ch.hlsUrl)) && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() =>
-                          setPreview({
-                            contentId: ch.contentId,
-                            url: ch.directHlsUrl ?? resolveHlsUrl(ch.hlsUrl!),
-                          })
-                        }
-                      >
-                        Preview
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() =>
+                            setPreview({
+                              contentId: ch.contentId,
+                              url: ch.directHlsUrl ?? resolveHlsUrl(ch.hlsUrl!),
+                            })
+                          }
+                        >
+                          Preview
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => copyUrl(ch)}>
+                          Copy URL
+                        </Button>
+                      </>
                     )}
                     {ch.running ? (
                       <Button
