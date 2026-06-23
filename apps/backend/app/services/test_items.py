@@ -140,7 +140,7 @@ TEST_ITEMS: tuple[TestItemSpec, ...] = (
 
         manifest_hint="USL07/SH4/SH4.isml/.mpd",
 
-        live_cdn_host="i-live-cache.akamaized.net",
+        live_cdn_host="r-live-cache.akamaized.net",
 
         title="201 Live",
 

@@ -29,7 +29,7 @@ const LIVE_CHANNELS: LiveChannelDef[] = [
     channelTag: "SH4",
     channelNumber: "201",
     manifestHint: "USL07/SH4/SH4.isml/.mpd",
-    cdnHost: "i-live-cache.akamaized.net",
+    cdnHost: "r-live-cache.akamaized.net",
     image: "/images/programthumbnail_3.png",
   },
   {

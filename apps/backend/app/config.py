@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     # Set WV_STREAMING_BINARY to the built binary's absolute path on the server.
     wv_streaming_binary: str = "../../dstv-widevine-decryption/bin/wv-mpd-streaming"
     wv_device_id: str = ""
+    # When True, hand the restreamer a MaxHeight<=576 filtered manifest so it
+    # fetches a low-bitrate ladder. r-live-cache channels otherwise expose a
+    # 2.8 Mbps/1080p video rendition whose live segments time out through the
+    # SOCKS proxy. Off by default so the working (i-live-cache) path is unchanged.
+    wv_streaming_apply_filter: bool = False
     hls_output_dir: str = "/tmp/hls/files"
     hls_logs_dir: str = "/tmp/hls/logs"
     hls_ready_timeout_seconds: float = 30.0

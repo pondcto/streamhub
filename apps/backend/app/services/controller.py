@@ -150,6 +150,17 @@ async def start_channel(
     # starts too so all paths behave identically).
     manifest_url = manifest_url.split("?", 1)[0]
 
+    # Optionally re-apply the low-res streaming filter so the restreamer fetches a
+    # MaxHeight<=576 ladder. r-live-cache channels otherwise expose a 2.8 Mbps/1080p
+    # video rendition whose live segments time out through the SOCKS proxy (the tiny
+    # audio segments still succeed). Off by default so the working i-live-cache path
+    # is untouched; enable with WV_STREAMING_APPLY_FILTER=1.
+    if settings.wv_streaming_apply_filter and _mode_for(content_type) == "live":
+        from app.services.live_manifest import DEFAULT_LIVE_STREAMING_FILTER
+
+        manifest_url = f"{manifest_url}{DEFAULT_LIVE_STREAMING_FILTER}"
+        logger.info("Applying low-res streaming filter to %s manifest", content_id)
+
     binary = Path(settings.wv_streaming_binary)
     if not binary.exists():
         raise FileNotFoundError(
