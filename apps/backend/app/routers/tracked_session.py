@@ -123,6 +123,7 @@ async def ingest_tracked_session(payload: TrackedSessionRequest) -> TrackedSessi
             request_url=payload.request_url,
             channel_tag=payload.channel_tag,
             live_manifest_url=payload.live_manifest_url,
+            live_manifest_xml=payload.live_manifest_xml,
         )
     except ValueError as exc:
         raise HTTPException(

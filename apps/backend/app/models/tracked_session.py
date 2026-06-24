@@ -17,6 +17,10 @@ class TrackedSessionRequest(BaseModel):
     request_url: Optional[str] = Field(default=None, max_length=2048)
     channel_tag: Optional[str] = None
     live_manifest_url: Optional[str] = Field(default=None, max_length=4096)
+    # The MPD body the in-region browser already fetched. Live Akamai manifests are
+    # IP/geo-restricted, so the backend can't re-fetch them; when the extension
+    # sends the XML here, key generation parses it directly instead of fetching.
+    live_manifest_xml: Optional[str] = Field(default=None, max_length=2_000_000)
 
 
 class TestKeyRefreshStatus(BaseModel):

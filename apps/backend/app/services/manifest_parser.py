@@ -120,7 +120,13 @@ async def fetch_manifest_drm_data(
     mpd_url: str,
     settings: Settings,
     client: Optional[httpx.AsyncClient] = None,
+    manifest_xml: Optional[str] = None,
 ) -> dict:
+    # If the in-region browser already captured the MPD body, parse it directly —
+    # the live Akamai manifest is IP/geo-locked and can't be re-fetched server-side.
+    if manifest_xml and manifest_xml.strip():
+        return parse_mpd_xml(manifest_xml, mpd_url)
+
     headers = browser_request_headers(settings)
 
     owns_client = client is None

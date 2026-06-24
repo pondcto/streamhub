@@ -9,6 +9,7 @@ from app.services.auth import (
     get_entitlement_access_token,
     get_irdeto_session,
     get_stored_live_manifest_url,
+    get_stored_live_manifest_xml,
     parse_session_info,
     set_stored_live_manifest_url,
 )
@@ -324,10 +325,14 @@ class DecryptionService:
                 code="MANIFEST_RESOLVE_FAILED",
             ) from exc
 
+        # Prefer the browser-captured MPD body (the live Akamai manifest is
+        # IP/geo-locked and 403s when fetched from the server).
+        manifest_xml = get_stored_live_manifest_xml(channel_tag) if channel_tag else None
         try:
             manifest = await fetch_manifest_drm_data(
                 manifest_url,
                 self.settings,
+                manifest_xml=manifest_xml,
             )
         except ManifestParserError as exc:
             raise EntitlementError(

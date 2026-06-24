@@ -42,6 +42,10 @@ _tracked_captured_at: Optional[datetime] = None
 _tracked_source_url: Optional[str] = None
 _tracked_request_url: Optional[str] = None
 _live_manifest_urls: Dict[str, str] = {}
+# Browser-captured MPD body per channel tag. The live Akamai CDN IP/geo-restricts
+# the manifest, so the backend can't re-fetch it; the in-region extension sends the
+# body and key generation parses it directly. In-memory only (re-sent each capture).
+_live_manifest_xml: Dict[str, str] = {}
 
 
 def _decode_jwt_payload(token: str) -> Dict[str, Any]:
@@ -365,6 +369,21 @@ def set_stored_live_manifest_url(channel_tag: str, manifest_url: str) -> None:
     logger.info("Stored signed live manifest URL for channel %s.", tag)
 
 
+def get_stored_live_manifest_xml(channel_tag: str) -> Optional[str]:
+    if not channel_tag:
+        return None
+    return _live_manifest_xml.get(channel_tag.strip().upper())
+
+
+def set_stored_live_manifest_xml(channel_tag: str, manifest_xml: str) -> None:
+    tag = str(channel_tag or "").strip().upper()
+    xml = str(manifest_xml or "").strip()
+    if not tag or not xml:
+        return
+    _live_manifest_xml[tag] = xml
+    logger.info("Stored browser-captured manifest XML for channel %s (%d bytes).", tag, len(xml))
+
+
 def capture_live_manifest_urls(
     *,
     channel_tag: Optional[str] = None,
@@ -542,6 +561,7 @@ def apply_tracked_session(
     request_url: Optional[str] = None,
     channel_tag: Optional[str] = None,
     live_manifest_url: Optional[str] = None,
+    live_manifest_xml: Optional[str] = None,
 ) -> SessionInfo:
     """Apply session fields posted by an external DStv browser tracker."""
     global _tracked_captured_at, _tracked_source_url, _tracked_request_url
@@ -578,6 +598,19 @@ def apply_tracked_session(
         request_url=request_url,
         source_url=source_url,
     )
+
+    # Store the browser-captured MPD body so key generation can parse it without
+    # re-fetching the IP/geo-locked Akamai manifest from the server.
+    if live_manifest_xml:
+        from app.services.live_manifest import channel_tag_from_signed_manifest_url
+
+        xml_tag = (
+            str(channel_tag or "").strip().upper()
+            or (channel_tag_from_signed_manifest_url(str(live_manifest_url or "")) or "")
+        )
+        if xml_tag:
+            set_stored_live_manifest_xml(xml_tag, live_manifest_xml)
+
     if channel_tag and get_stored_live_manifest_url(channel_tag):
         logger.info(
             "Tracked session includes signed live manifest for channel %s",
