@@ -10,11 +10,13 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth_deps import require_admin, require_admin_download
 from app.config import get_settings
+from app.db import get_db
 from app.models.admin import AdminChannel, AdminChannelList, LogChunk
-from app.services import controller
+from app.services import controller, proxies
 from app.services.auth import get_stored_live_manifest_url
 from app.services.live_manifest import akamai_token_expires_at, is_akamai_token_expired
 from app.services.test_items import TEST_ITEMS, find_test_item
@@ -32,10 +34,12 @@ def _manifest_for(channel_tag: str | None) -> str | None:
 
 
 @router.get("/channels", response_model=AdminChannelList)
-async def list_channels() -> AdminChannelList:
+async def list_channels(db: AsyncSession = Depends(get_db)) -> AdminChannelList:
+    assignments = await proxies.assignment_map(db)
     channels: list[AdminChannel] = []
     for spec in TEST_ITEMS:
         info = controller.get_status(spec.id)
+        profile = assignments.get(spec.id)
         channels.append(
             AdminChannel(
                 contentId=spec.id,
@@ -49,6 +53,8 @@ async def list_channels() -> AdminChannelList:
                 hlsUrl=info["hlsUrl"] if info else None,
                 startedAt=info["startedAt"] if info else None,
                 directHlsUrl=spec.direct_hls_url,
+                profileId=profile.id if profile else None,
+                profileName=profile.name if profile else None,
             )
         )
     return AdminChannelList(channels=channels)

@@ -11,21 +11,30 @@ import SchedulesSection from "@/components/SchedulesSection";
 import AddChannelSection from "@/components/admin/AddChannelSection";
 import AdminSectionHeader from "@/components/admin/AdminSectionHeader";
 import AdminSidebar, { SECTION_META, type AdminSection } from "@/components/admin/AdminSidebar";
+import ProfilesSection from "@/components/admin/ProfilesSection";
 import SettingsSection from "@/components/admin/SettingsSection";
 import UserManagementSection from "@/components/admin/UserManagementSection";
 import { useToast } from "@/components/Toast";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Field from "@/components/ui/Field";
-import { downloadLogs, fetchLogs, listChannels, startChannel, stopChannel } from "@/lib/admin-api";
+import {
+  assignChannelProfile,
+  downloadLogs,
+  fetchLogs,
+  listChannels,
+  listProxies,
+  startChannel,
+  stopChannel,
+} from "@/lib/admin-api";
 import { useAdminPrefs } from "@/lib/admin-prefs";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import { resolveHlsUrl } from "@/lib/stream-api";
 import { TEST_VIDEOS } from "@/lib/test-items";
-import type { AdminChannel } from "@/lib/types";
+import type { AdminChannel, ProxyProfile } from "@/lib/types";
 
-const ALL_SECTIONS: AdminSection[] = ["users", "add", "channels", "schedule", "settings"];
+const ALL_SECTIONS: AdminSection[] = ["users", "channels", "schedule", "profiles", "settings"];
 
 function isSection(value: string | null): value is AdminSection {
   return value != null && (ALL_SECTIONS as string[]).includes(value);
@@ -114,8 +123,49 @@ function ChannelsTab({
   const [logChannel, setLogChannel] = useState<string | null>(null);
   const [logText, setLogText] = useState("");
   const [preview, setPreview] = useState<{ contentId: string; url: string } | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
   const logOffset = useRef(0);
   const logBoxRef = useRef<HTMLPreElement>(null);
+
+  // Proxy-profile assignment.
+  const [profiles, setProfiles] = useState<ProxyProfile[]>([]);
+  const [assignTarget, setAssignTarget] = useState<AdminChannel | null>(null);
+  const [assignValue, setAssignValue] = useState<string>("");
+  const [assignBusy, setAssignBusy] = useState(false);
+
+  const loadProfiles = useCallback(async () => {
+    try {
+      setProfiles(await listProxies());
+    } catch {
+      // Profiles are optional context for the table; ignore load failures here.
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProfiles();
+  }, [loadProfiles]);
+
+  const openAssign = useCallback((ch: AdminChannel) => {
+    setAssignTarget(ch);
+    setAssignValue(ch.profileId != null ? String(ch.profileId) : "");
+    loadProfiles();
+  }, [loadProfiles]);
+
+  const saveAssign = useCallback(async () => {
+    if (!assignTarget) return;
+    setAssignBusy(true);
+    try {
+      const profileId = assignValue ? Number(assignValue) : null;
+      await assignChannelProfile(assignTarget.contentId, profileId);
+      await refresh();
+      notify("Profile assignment updated.", "success");
+      setAssignTarget(null);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Failed to assign profile.", "error");
+    } finally {
+      setAssignBusy(false);
+    }
+  }, [assignTarget, assignValue, refresh, notify]);
 
   const total = channels.length;
   const running = channels.filter((c) => c.running).length;
@@ -244,6 +294,16 @@ function ChannelsTab({
           <option value="running">Running</option>
           <option value="stopped">Stopped</option>
         </select>
+        <Button
+          onClick={() => setShowAdd(true)}
+          leftIcon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} className="h-4 w-4" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+            </svg>
+          }
+        >
+          Add Channel
+        </Button>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/10 bg-surface-raised shadow-card">
@@ -253,6 +313,7 @@ function ChannelsTab({
               <th className="px-4 py-2 font-medium">No.</th>
               <th className="px-4 py-2 font-medium">Channel</th>
               <th className="px-4 py-2 font-medium">Content ID</th>
+              <th className="px-4 py-2 font-medium">Profile</th>
               <th className="px-4 py-2 font-medium">Status</th>
               <th className="px-4 py-2 text-right font-medium">Actions</th>
             </tr>
@@ -272,6 +333,27 @@ function ChannelsTab({
                   )}
                 </td>
                 <td className={cn("px-4 font-mono text-xs text-content-faint", rowPad)}>{ch.contentId}</td>
+                <td className={cn("px-4", rowPad)}>
+                  <div className="flex items-center gap-2">
+                    {ch.profileName ? (
+                      <Badge tone="accent">{ch.profileName}</Badge>
+                    ) : (
+                      <span className="text-xs text-content-faint">—</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => openAssign(ch)}
+                      aria-label={`Edit profile for ${nameFor(ch)}`}
+                      title="Edit profile"
+                      className="rounded-md p-1 text-content-faint transition-colors hover:bg-white/5 hover:text-white"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-4 w-4" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 20h4l10.5-10.5a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4Z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6.5 17.5 10.5" />
+                      </svg>
+                    </button>
+                  </div>
+                </td>
                 <td className={cn("px-4", rowPad)}>
                   <StatusBadge running={ch.running} />
                 </td>
@@ -326,7 +408,7 @@ function ChannelsTab({
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-content-faint">
+                <td colSpan={6} className="px-4 py-12 text-center text-content-faint">
                   {search || statusFilter !== "all" ? "No channels match your filters." : "No channels."}
                 </td>
               </tr>
@@ -383,6 +465,62 @@ function ChannelsTab({
           >
             {logText || "Waiting for log output…"}
           </pre>
+        </Modal>
+      )}
+
+      {/* Add-channel modal */}
+      {showAdd && (
+        <Modal title="Add Channel" onClose={() => setShowAdd(false)} size="lg">
+          <div className="p-5">
+            <AddChannelSection
+              onCreated={async () => {
+                await refresh();
+                setShowAdd(false);
+              }}
+            />
+          </div>
+        </Modal>
+      )}
+
+      {/* Assign-profile modal */}
+      {assignTarget && (
+        <Modal
+          title={<>Assign profile · <span className="font-semibold text-white">{nameFor(assignTarget)}</span></>}
+          onClose={() => setAssignTarget(null)}
+          size="md"
+        >
+          <div className="space-y-4 p-5">
+            <p className="text-sm text-content-muted">
+              Choose the proxy profile this channel should use for outbound traffic.
+            </p>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-content-muted">
+                Proxy profile
+              </span>
+              <select
+                value={assignValue}
+                onChange={(e) => setAssignValue(e.target.value)}
+                className="w-full rounded-lg border border-white/10 bg-surface-overlay px-3 py-2.5 text-sm text-white transition-colors focus:border-accent/50 focus:outline-none"
+              >
+                <option value="">None (no profile)</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={String(p.id)}>
+                    {p.name} — {p.proxyType}://{p.host}:{p.port}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {profiles.length === 0 && (
+              <p className="text-xs text-content-faint">
+                No proxy profiles exist yet. Create one in the Proxy Profiles section first.
+              </p>
+            )}
+            <div className="flex justify-end pt-1">
+              <Button loading={assignBusy} onClick={saveAssign}>
+                Save
+              </Button>
+            </div>
+          </div>
         </Modal>
       )}
 
@@ -486,7 +624,7 @@ function AdminContent() {
               <AdminSectionHeader title={meta.label} description={meta.description} />
               {section === "channels" && <ChannelsTab channels={channels} refresh={refresh} />}
               {section === "schedule" && <SchedulesSection channels={channels} />}
-              {section === "add" && <AddChannelSection onCreated={refresh} />}
+              {section === "profiles" && <ProfilesSection />}
               {section === "users" && <UserManagementSection />}
               {section === "settings" && <SettingsSection />}
             </motion.div>

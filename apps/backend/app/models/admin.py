@@ -15,6 +15,8 @@ class AdminChannel(BaseModel):
     hlsUrl: Optional[str] = None
     startedAt: Optional[str] = None
     directHlsUrl: Optional[str] = None
+    profileId: Optional[int] = None
+    profileName: Optional[str] = None
 
 
 class AdminChannelList(BaseModel):

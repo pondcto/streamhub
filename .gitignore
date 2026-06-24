@@ -28,12 +28,18 @@ build/
 # Environment / secrets (never commit) — keep *.env.example tracked
 .env
 .env.*
+env
 !.env.example
 !*.env.example
 
 # Runtime session state (JWTs, tokens — never commit)
 .streamhub_session.json
 .streamhub_test_keys.json
+
+# Local SQLite databases (generated at runtime)
+*.db
+*.sqlite
+*.sqlite3
 
 # Frontend (Next.js)
 node_modules/

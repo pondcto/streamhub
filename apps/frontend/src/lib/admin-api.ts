@@ -1,5 +1,5 @@
 import { getStoredToken } from "./auth";
-import type { AdminChannel, LogChunk, Schedule } from "./types";
+import type { AdminChannel, LogChunk, ProxyProfile, Schedule } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -85,6 +85,53 @@ export function updateSchedule(id: number, body: Partial<ScheduleInput>): Promis
 
 export function deleteSchedule(id: number): Promise<{ id: number; deleted: boolean }> {
   return authed(`/api/admin/schedules/${id}`, { method: "DELETE" });
+}
+
+// --- Proxy Profiles ------------------------------------------------------
+
+export interface ProxyProfileInput {
+  name: string;
+  userAgent: string;
+  proxyType: string;
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+}
+
+export function listProxies(): Promise<ProxyProfile[]> {
+  return authed("/api/admin/proxies");
+}
+
+export function createProxy(body: ProxyProfileInput): Promise<ProxyProfile> {
+  return authed("/api/admin/proxies", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateProxy(id: number, body: Partial<ProxyProfileInput>): Promise<ProxyProfile> {
+  return authed(`/api/admin/proxies/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteProxy(id: number): Promise<{ id: number; deleted: boolean }> {
+  return authed(`/api/admin/proxies/${id}`, { method: "DELETE" });
+}
+
+export function assignChannelProfile(
+  contentId: string,
+  profileId: number | null
+): Promise<{ contentId: string; profileId: number | null }> {
+  return authed(`/api/admin/channels/${encodeURIComponent(contentId)}/profile`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profileId }),
+  });
 }
 
 // --- Add Channel ---------------------------------------------------------

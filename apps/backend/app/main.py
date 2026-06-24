@@ -19,6 +19,7 @@ from app.routers import (
     health,
     navigation,
     playback,
+    proxies,
     schedules,
     stream,
     test_videos,
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(admin.download_router)
     app.include_router(schedules.router)
+    app.include_router(proxies.router)
     app.include_router(tracked_session.router)
 
     # Serve the restreamer's HLS output (/tmp/hls/files) at /hls/<contentId>/...

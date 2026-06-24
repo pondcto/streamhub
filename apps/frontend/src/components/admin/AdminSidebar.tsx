@@ -7,18 +7,19 @@ import Badge from "@/components/ui/Badge";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 
-export type AdminSection = "users" | "add" | "channels" | "schedule" | "settings";
+export type AdminSection = "users" | "add" | "channels" | "schedule" | "profiles" | "settings";
 
 export const SECTION_META: Record<AdminSection, { label: string; description: string }> = {
   users: { label: "User Management", description: "View accounts, manage roles, and invite teammates." },
   add: { label: "Add Channel", description: "Register a new channel in the catalog." },
   channels: { label: "Channel Management", description: "Start, stop, and inspect channel restreams." },
   schedule: { label: "Schedule", description: "Automate channel start and stop windows." },
+  profiles: { label: "Proxy Profiles", description: "Create and manage outbound proxy profiles." },
   settings: { label: "Settings", description: "Playback defaults and session credentials." },
 };
 
 /** Sidebar order (distinct from the default landing section, which is "channels"). */
-const NAV_ORDER: AdminSection[] = ["users", "add", "channels", "schedule", "settings"];
+const NAV_ORDER: AdminSection[] = ["users", "channels", "schedule", "profiles", "settings"];
 
 const ICONS: Record<AdminSection, ReactNode> = {
   users: (
@@ -45,6 +46,12 @@ const ICONS: Record<AdminSection, ReactNode> = {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-[18px] w-[18px]" aria-hidden="true">
       <rect x="3.5" y="5" width="17" height="15" rx="2" />
       <path strokeLinecap="round" strokeLinejoin="round" d="M3.5 9.5h17M8 3.5v3M16 3.5v3" />
+    </svg>
+  ),
+  profiles: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-[18px] w-[18px]" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
     </svg>
   ),
   settings: (

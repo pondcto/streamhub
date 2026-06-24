@@ -208,6 +208,20 @@ export interface AdminChannel {
   hlsUrl?: string | null;
   startedAt?: string | null;
   directHlsUrl?: string | null;
+  profileId?: number | null;
+  profileName?: string | null;
+}
+
+export interface ProxyProfile {
+  id: number;
+  name: string;
+  userAgent: string;
+  proxyType: string;
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  createdAt: string;
 }
 
 export interface LogChunk {
