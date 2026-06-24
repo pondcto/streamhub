@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from app.config import get_settings
+from app.config import ENV_FILE_PATH, get_settings
 from app.db import init_db
 from app.middleware.logging import RedactingAccessLogMiddleware
 from app.routers import (
@@ -43,6 +43,26 @@ async def lifespan(app: FastAPI):
     await seed_admin()
     initialize_session()
     await scheduler.start_scheduler()
+
+    # Surface whether the outbound SOCKS/HTTP proxy is active. Live DStv manifests
+    # are geo-restricted, so without the proxy the server IP gets a 403 on every
+    # live-channel manifest fetch. This line makes the state obvious in the logs.
+    settings = get_settings()
+    if settings.dstv_proxy_configured:
+        logger.info(
+            "DStv outbound proxy ENABLED: %s://%s:%s (live manifest/license/API egress via this proxy)",
+            settings.dstv_proxy_type,
+            settings.dstv_proxy_host,
+            settings.dstv_proxy_port,
+        )
+    else:
+        logger.warning(
+            "DStv outbound proxy DISABLED — no DSTV_PROXY_* settings loaded. Live "
+            "manifest fetches use the server IP and will be geo-blocked (403). "
+            "Ensure %s exists and is readable, then restart.",
+            ENV_FILE_PATH,
+        )
+
     logger.info("StreamHub backend started")
     yield
     scheduler.shutdown_scheduler()

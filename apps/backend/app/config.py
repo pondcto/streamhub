@@ -10,6 +10,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # or a container). Real environment variables still override the file.
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 _ENV_FILE = _BACKEND_ROOT / ".env"
+# Public, absolute path to the .env file (for diagnostics/logging).
+ENV_FILE_PATH = str(_ENV_FILE)
 
 
 class Settings(BaseSettings):
