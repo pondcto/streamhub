@@ -198,6 +198,12 @@ async def start_channel(
     if effective_device:
         cmd.append(effective_device)
 
+    # Hand the restreamer the per-channel proxy profile ({content_id}.env, written
+    # by the admin start flow) so it routes through the assigned SOCKS/HTTP proxy.
+    env_file = Path(settings.proxy_env_dir) / f"{content_id}.env"
+    if env_file.is_file():
+        cmd += ["--env", str(env_file)]
+
     log_file = open(log_path, "wb", buffering=0)
     popen = subprocess.Popen(
         cmd,

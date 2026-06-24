@@ -61,7 +61,7 @@ async def list_channels(db: AsyncSession = Depends(get_db)) -> AdminChannelList:
 
 
 @router.post("/channels/{content_id}/start", response_model=AdminChannel)
-async def start_channel(content_id: str) -> AdminChannel:
+async def start_channel(content_id: str, db: AsyncSession = Depends(get_db)) -> AdminChannel:
     spec = find_test_item(content_id)
     if spec is None:
         raise HTTPException(
@@ -95,6 +95,15 @@ async def start_channel(content_id: str) -> AdminChannel:
                 ),
             },
         )
+    # Export the assigned proxy profile to {content_id}.env before the restream
+    # starts, so the spawned process can pick up its DSTV_PROXY_* credentials.
+    profile = await proxies.assigned_profile(db, spec.id)
+    if profile is not None:
+        env_path = proxies.write_channel_env(spec.id, profile, get_settings().proxy_env_dir)
+        logger.info("Wrote proxy env for %s -> %s", spec.id, env_path)
+    else:
+        logger.warning("No proxy profile assigned to %s; skipping env export", spec.id)
+
     try:
         info = await controller.start_channel(
             content_id=spec.id,

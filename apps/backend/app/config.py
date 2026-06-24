@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     wv_streaming_apply_filter: bool = False
     hls_output_dir: str = "/tmp/hls/files"
     hls_logs_dir: str = "/tmp/hls/logs"
+    # Per-channel proxy env files ({content_id}.env) written when a channel
+    # starts, holding the assigned proxy profile (DSTV_UA / DSTV_PROXY_*).
+    proxy_env_dir: str = "/tmp/hls/env"
     hls_ready_timeout_seconds: float = 30.0
 
     # Timezone for playback schedules (cron triggers).
