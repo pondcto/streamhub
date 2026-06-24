@@ -4,7 +4,6 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, status
 
 from app.models.tracked_session import (
-    TestKeyRefreshStatus,
     TrackedSessionRequest,
     TrackedSessionResponse,
 )
@@ -23,9 +22,10 @@ from app.services.live_manifest import (
 from app.services.test_items import TEST_ITEMS, find_test_item_by_channel_tag
 from app.services.cache import metadata_cache
 from app.services.stored_test_keys import (
-    build_test_key_status,
     get_store_updated_at,
+    list_all_test_key_statuses,
     refresh_all_test_keys,
+    refresh_test_keys,
 )
 
 logger = logging.getLogger(__name__)
@@ -106,35 +106,6 @@ def log_tracked_session_payload(
     logger.info("\n%s", "\n".join(lines))
 
 
-def _results_to_statuses(results) -> list[TestKeyRefreshStatus]:
-    by_id = {item.item_id: item for item in results}
-    statuses: list[TestKeyRefreshStatus] = []
-    updated_at = get_store_updated_at()
-    generated_at = updated_at.isoformat() if updated_at else None
-
-    for spec in TEST_ITEMS:
-        result = by_id.get(spec.id)
-        if result is None:
-            statuses.append(
-                build_test_key_status(
-                    spec,
-                    status="missing",
-                    message="Key refresh did not run for this item.",
-                )
-            )
-            continue
-        statuses.append(
-            build_test_key_status(
-                spec,
-                status=result.status,
-                message=result.message,
-                keys=result.keys,
-                generated_at=generated_at,
-            )
-        )
-    return statuses
-
-
 @router.post("/", response_model=TrackedSessionResponse)
 async def ingest_tracked_session(payload: TrackedSessionRequest) -> TrackedSessionResponse:
     """Apply DStv session fields captured by an external browser tracker."""
@@ -168,14 +139,27 @@ async def ingest_tracked_session(payload: TrackedSessionRequest) -> TrackedSessi
 
     metadata_cache.clear()
 
-    key_results = await refresh_all_test_keys(user_access_token=info.connect_token)
-    test_keys = _results_to_statuses(key_results)
+    # Refresh only the channel that was just captured — it's the one with a fresh
+    # signed manifest. Every other channel keeps its already-stored key, so each
+    # capture adds its channel's key instead of re-running (and failing) all of
+    # them. Capturing 3 channels accumulates 3 keys rather than clobbering to 1.
+    captured_spec = find_test_item_by_channel_tag(stored_tag) if stored_tag else None
+    if captured_spec is not None:
+        await refresh_test_keys([captured_spec], user_access_token=info.connect_token)
+    else:
+        # No specific live channel resolved (e.g. a VOD capture) — refresh all.
+        await refresh_all_test_keys(user_access_token=info.connect_token)
+
+    # Report the merged store so other channels show their existing stored keys.
+    test_keys = list_all_test_key_statuses()
     keys_updated_at = get_store_updated_at()
 
     ok_count = sum(1 for item in test_keys if item.status == "ok")
     live_ids = {spec.id for spec in TEST_ITEMS if spec.channel_tag}
+    # Only genuine generation errors are worth a warning — "missing" just means
+    # that channel hasn't been captured yet.
     failed_live = [
-        item for item in test_keys if item.status != "ok" and item.item_id in live_ids
+        item for item in test_keys if item.status == "error" and item.item_id in live_ids
     ]
     for item in failed_live:
         logger.warning(

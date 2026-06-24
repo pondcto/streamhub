@@ -189,11 +189,21 @@ def get_stored_keys(item_id: str) -> Optional[DecryptionKeysResponse]:
     return keys
 
 
-async def refresh_all_test_keys(
+async def refresh_test_keys(
+    specs: List[TestItemSpec],
     *,
     user_access_token: Optional[str] = None,
 ) -> list[TestKeyRefreshResult]:
-    """Generate and persist decryption keys for all configured test videos."""
+    """Generate and persist decryption keys for the given test items.
+
+    Only the listed items are (re)generated; every other item keeps its existing
+    stored key. When generation fails for an item that already has a valid stored
+    key, that key is preserved (the failure is recorded as a message) rather than
+    clobbered — so capturing one channel can never wipe another channel's key.
+    """
+    if not specs:
+        return []
+
     token = user_access_token or get_effective_access_token()
     session = get_configured_session()
     if session and session.dstv_access_token:
@@ -205,27 +215,50 @@ async def refresh_all_test_keys(
     results: list[TestKeyRefreshResult] = []
     now = datetime.now(timezone.utc).isoformat()
 
-    for spec in TEST_ITEMS:
+    for spec in specs:
         result, keys = await _refresh_single_test_key(decryption, spec, token)
         result.keys = keys
         results.append(result)
 
-        entry: dict[str, Any] = {
-            "status": result.status,
-            "message": result.message,
-            "generated_at": now,
-            "title": result.title,
-        }
         if keys is not None:
-            entry["keys"] = _serialize_keys(keys)
-        store["items"][spec.id] = entry
+            store["items"][spec.id] = {
+                "status": result.status,
+                "message": result.message,
+                "generated_at": now,
+                "title": result.title,
+                "keys": _serialize_keys(keys),
+            }
+            continue
+
+        # Generation failed. Keep a previously-stored good key instead of
+        # overwriting it with an error, so accumulated keys survive.
+        existing = store["items"].get(spec.id)
+        if existing and existing.get("status") == "ok" and existing.get("keys"):
+            existing = dict(existing)
+            existing["message"] = result.message
+            store["items"][spec.id] = existing
+        else:
+            store["items"][spec.id] = {
+                "status": result.status,
+                "message": result.message,
+                "generated_at": now,
+                "title": result.title,
+            }
 
     store["updated_at"] = now
     _save_store(store)
 
     ok_count = sum(1 for item in results if item.status == "ok")
-    logger.info("Refreshed stored test keys: %s/%s succeeded.", ok_count, len(results))
+    logger.info("Refreshed %s stored test key(s): %s/%s succeeded.", len(results), ok_count, len(results))
     return results
+
+
+async def refresh_all_test_keys(
+    *,
+    user_access_token: Optional[str] = None,
+) -> list[TestKeyRefreshResult]:
+    """Generate and persist decryption keys for all configured test videos."""
+    return await refresh_test_keys(list(TEST_ITEMS), user_access_token=user_access_token)
 
 
 async def _refresh_single_test_key(
