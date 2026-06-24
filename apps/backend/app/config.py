@@ -1,13 +1,20 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import List, Optional
 from urllib.parse import quote
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Absolute path to apps/backend/.env so settings (incl. the SOCKS proxy) load no
+# matter what working directory uvicorn is started from (repo root, apps/backend,
+# or a container). Real environment variables still override the file.
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+_ENV_FILE = _BACKEND_ROOT / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
         extra="ignore",
     )
