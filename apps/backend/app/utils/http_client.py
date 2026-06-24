@@ -45,7 +45,7 @@ def _log_proxy_usage(settings: Settings, client_kind: str) -> None:
     if not settings.dstv_proxy_configured:
         return
     logger.info(
-        "DStv %s client using %s proxy at %s:%s",
+        "DStv %s client using %s proxy at %s:%s via cURL",
         client_kind,
         settings.dstv_proxy_type,
         settings.dstv_proxy_host,
@@ -59,8 +59,13 @@ def httpx_async_client(
     default_headers: Optional[dict[str, str]] = None,
     log_label: str = "HTTP",
     **extra: Any,
-) -> httpx.AsyncClient:
-    """Async httpx client with proxy and browser User-Agent defaults."""
+):
+    """Async HTTP client with browser defaults.
+
+    When a proxy is configured, returns a cURL (pycurl)-backed client so all
+    proxied requests egress through libcurl's SOCKS implementation. Otherwise
+    returns a plain httpx.AsyncClient (direct, no proxy).
+    """
     kwargs = httpx_client_kwargs(settings, **extra)
     kwargs.setdefault("timeout", _DEFAULT_TIMEOUT)
     kwargs.setdefault("follow_redirects", True)
@@ -69,6 +74,11 @@ def httpx_async_client(
     elif "headers" not in kwargs:
         kwargs["headers"] = browser_request_headers(settings)
     _log_proxy_usage(settings, log_label)
+    if kwargs.get("proxy"):
+        from app.utils.curl_client import CurlAsyncClient  # lazy: pycurl only for proxy path
+
+        proxy = kwargs.pop("proxy")
+        return CurlAsyncClient(proxy=proxy, **kwargs)
     return httpx.AsyncClient(**kwargs)
 
 
@@ -78,8 +88,8 @@ def httpx_sync_client(
     default_headers: Optional[dict[str, str]] = None,
     log_label: str = "HTTP",
     **extra: Any,
-) -> httpx.Client:
-    """Sync httpx client with proxy and browser User-Agent defaults."""
+):
+    """Sync HTTP client with browser defaults; cURL-backed when a proxy is set."""
     kwargs = httpx_client_kwargs(settings, **extra)
     kwargs.setdefault("timeout", _DEFAULT_TIMEOUT)
     kwargs.setdefault("follow_redirects", True)
@@ -88,4 +98,9 @@ def httpx_sync_client(
     elif "headers" not in kwargs:
         kwargs["headers"] = browser_request_headers(settings)
     _log_proxy_usage(settings, log_label)
+    if kwargs.get("proxy"):
+        from app.utils.curl_client import CurlSyncClient  # lazy: pycurl only for proxy path
+
+        proxy = kwargs.pop("proxy")
+        return CurlSyncClient(proxy=proxy, **kwargs)
     return httpx.Client(**kwargs)
