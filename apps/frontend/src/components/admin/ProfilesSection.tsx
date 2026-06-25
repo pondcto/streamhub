@@ -82,8 +82,9 @@ function toInput(p: ProxyProfile): ProxyProfileInput {
   };
 }
 
-const inputClass =
-  "w-full rounded-lg border border-white/10 bg-surface-overlay px-3 py-2.5 text-sm text-white transition-colors focus:border-accent/50 focus:outline-none";
+const inputBase =
+  "rounded-lg border border-white/10 bg-surface-overlay px-3 py-2.5 text-sm text-white transition-colors focus:border-accent/50 focus:outline-none";
+const inputClass = "w-full " + inputBase;
 
 function ProfileForm({
   initial,
@@ -182,7 +183,7 @@ function ProfileForm({
             onChange={(e) => set("host", e.target.value)}
             onPaste={handlePaste}
             placeholder="95.135.113.108"
-            className={inputClass + " flex-1"}
+            className={inputBase + " min-w-0 flex-1"}
           />
           <span className="text-content-faint">:</span>
           <input
@@ -191,7 +192,7 @@ function ProfileForm({
             onChange={(e) => set("port", parseInt(e.target.value, 10) || 0)}
             onPaste={handlePaste}
             placeholder="44418"
-            className={inputClass + " w-28"}
+            className={inputBase + " w-24 shrink-0"}
           />
         </div>
       </div>
