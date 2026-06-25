@@ -15,11 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth_deps import require_admin, require_admin_download
 from app.config import get_settings
 from app.db import get_db
-from app.models.admin import AdminChannel, AdminChannelList, LogChunk
+from app.models.admin import AdminChannel, AdminChannelCreate, AdminChannelList, LogChunk
 from app.services import controller, proxies
 from app.services.auth import get_stored_live_manifest_url
+from app.services.channel_registry import create_channel, find_test_item, get_all_items
 from app.services.live_manifest import akamai_token_expires_at, is_akamai_token_expired
-from app.services.test_items import TEST_ITEMS, find_test_item
+from app.services.test_items import TestItemSpec
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -33,31 +34,72 @@ def _manifest_for(channel_tag: str | None) -> str | None:
     return get_stored_live_manifest_url(channel_tag) if channel_tag else None
 
 
+def _admin_channel_from_spec(
+    spec: TestItemSpec,
+    *,
+    profile_id: int | None = None,
+    profile_name: str | None = None,
+) -> AdminChannel:
+    info = controller.get_status(spec.id)
+    return AdminChannel(
+        contentId=spec.id,
+        channelTag=spec.channel_tag,
+        channelNumber=spec.channel_number,
+        title=spec.title,
+        category=spec.category,
+        contentType=spec.content_type,
+        hasManifest=bool(_manifest_for(spec.channel_tag)),
+        running=info is not None,
+        pid=info["pid"] if info else None,
+        hlsUrl=info["hlsUrl"] if info else None,
+        startedAt=info["startedAt"] if info else None,
+        directHlsUrl=spec.direct_hls_url,
+        imageUrl=spec.image_url,
+        profileId=profile_id,
+        profileName=profile_name,
+    )
+
+
 @router.get("/channels", response_model=AdminChannelList)
 async def list_channels(db: AsyncSession = Depends(get_db)) -> AdminChannelList:
     assignments = await proxies.assignment_map(db)
     channels: list[AdminChannel] = []
-    for spec in TEST_ITEMS:
-        info = controller.get_status(spec.id)
+    for spec in get_all_items():
         profile = assignments.get(spec.id)
         channels.append(
-            AdminChannel(
-                contentId=spec.id,
-                channelTag=spec.channel_tag,
-                title=spec.title,
-                category=spec.category,
-                contentType=spec.content_type,
-                hasManifest=bool(_manifest_for(spec.channel_tag)),
-                running=info is not None,
-                pid=info["pid"] if info else None,
-                hlsUrl=info["hlsUrl"] if info else None,
-                startedAt=info["startedAt"] if info else None,
-                directHlsUrl=spec.direct_hls_url,
-                profileId=profile.id if profile else None,
-                profileName=profile.name if profile else None,
+            _admin_channel_from_spec(
+                spec,
+                profile_id=profile.id if profile else None,
+                profile_name=profile.name if profile else None,
             )
         )
     return AdminChannelList(channels=channels)
+
+
+@router.post("/channels", response_model=AdminChannel, status_code=status.HTTP_201_CREATED)
+async def register_channel(
+    body: AdminChannelCreate, db: AsyncSession = Depends(get_db)
+) -> AdminChannel:
+    try:
+        spec = await create_channel(
+            db,
+            content_id=body.contentId,
+            channel_tag=body.channelTag,
+            title=body.title,
+            manifest_hint=body.manifestHint,
+            live_cdn_host=body.liveCdnHost,
+            category=body.category,
+            channel_number=body.channelNumber,
+            image_url=body.imageUrl,
+            direct_hls_url=body.directHlsUrl,
+            live_manifest_cdn=body.liveManifestCdn,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_CHANNEL", "message": str(exc)},
+        ) from exc
+    return _admin_channel_from_spec(spec)
 
 
 @router.post("/channels/{content_id}/start", response_model=AdminChannel)
@@ -95,8 +137,6 @@ async def start_channel(content_id: str, db: AsyncSession = Depends(get_db)) -> 
                 ),
             },
         )
-    # Export the assigned proxy profile to {content_id}.env before the restream
-    # starts, so the spawned process can pick up its DSTV_PROXY_* credentials.
     profile = await proxies.assigned_profile(db, spec.id)
     if profile is not None:
         env_path = proxies.write_channel_env(spec.id, profile, get_settings().proxy_env_dir)
@@ -123,9 +163,11 @@ async def start_channel(content_id: str, db: AsyncSession = Depends(get_db)) -> 
             detail={"code": "STREAM_START_FAILED", "message": str(exc)},
         ) from exc
 
+    profile = await proxies.assigned_profile(db, spec.id)
     return AdminChannel(
         contentId=spec.id,
         channelTag=spec.channel_tag,
+        channelNumber=spec.channel_number,
         title=spec.title,
         category=spec.category,
         contentType=spec.content_type,
@@ -134,6 +176,10 @@ async def start_channel(content_id: str, db: AsyncSession = Depends(get_db)) -> 
         pid=info["pid"],
         hlsUrl=info["hlsUrl"],
         startedAt=info["startedAt"],
+        directHlsUrl=spec.direct_hls_url,
+        imageUrl=spec.image_url,
+        profileId=profile.id if profile else None,
+        profileName=profile.name if profile else None,
     )
 
 

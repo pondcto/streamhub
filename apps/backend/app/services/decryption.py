@@ -18,7 +18,7 @@ from app.services.live_manifest import (
     is_signed_manifest_url,
     live_manifest_cdn_type,
 )
-from app.services.test_items import find_test_item_by_channel_tag
+from app.services.channel_registry import find_test_item_by_channel_tag
 from app.services.dstv_client import DStvAPIError, DStvClient, is_expired
 from app.services.entitlement import EntitlementError
 from app.services.entitlement_response import parse_entitlement_response

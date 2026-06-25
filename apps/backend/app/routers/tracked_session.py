@@ -19,7 +19,7 @@ from app.services.live_manifest import (
     is_signed_manifest_url,
     live_manifest_cdn_type,
 )
-from app.services.test_items import TEST_ITEMS, find_test_item_by_channel_tag
+from app.services.channel_registry import find_test_item_by_channel_tag, get_all_items
 from app.services.cache import metadata_cache
 from app.services.stored_test_keys import (
     get_store_updated_at,
@@ -156,7 +156,7 @@ async def ingest_tracked_session(payload: TrackedSessionRequest) -> TrackedSessi
     keys_updated_at = get_store_updated_at()
 
     ok_count = sum(1 for item in test_keys if item.status == "ok")
-    live_ids = {spec.id for spec in TEST_ITEMS if spec.channel_tag}
+    live_ids = {spec.id for spec in get_all_items() if spec.channel_tag}
     # Only genuine generation errors are worth a warning — "missing" just means
     # that channel hasn't been captured yet.
     failed_live = [

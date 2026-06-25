@@ -398,7 +398,7 @@ def capture_live_manifest_urls(
         is_signed_manifest_url,
         live_manifest_cdn_type,
     )
-    from app.services.test_items import find_test_item_by_channel_tag
+    from app.services.channel_registry import find_test_item_by_channel_tag
 
     candidates: list[tuple[Optional[str], str]] = []
     if live_manifest_url:

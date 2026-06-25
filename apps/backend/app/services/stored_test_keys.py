@@ -10,7 +10,8 @@ from app.services.auth import get_configured_session, get_effective_access_token
 from app.services.decryption import DecryptionService
 from app.services.dstv_client import is_expired
 from app.services.entitlement import EntitlementError
-from app.services.test_items import TEST_ITEMS, TestItemSpec
+from app.services.channel_registry import get_all_items
+from app.services.test_items import TestItemSpec
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ def list_all_test_key_statuses() -> list[TestKeyRefreshStatus]:
     items = store.get("items", {})
     results: list[TestKeyRefreshStatus] = []
 
-    for spec in TEST_ITEMS:
+    for spec in get_all_items():
         entry = items.get(spec.id) or {}
         entry_status = entry.get("status", "missing")
         generated_at = entry.get("generated_at")
@@ -258,7 +259,7 @@ async def refresh_all_test_keys(
     user_access_token: Optional[str] = None,
 ) -> list[TestKeyRefreshResult]:
     """Generate and persist decryption keys for all configured test videos."""
-    return await refresh_test_keys(list(TEST_ITEMS), user_access_token=user_access_token)
+    return await refresh_test_keys(list(get_all_items()), user_access_token=user_access_token)
 
 
 async def _refresh_single_test_key(

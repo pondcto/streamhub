@@ -199,6 +199,7 @@ export interface StreamInfo {
 export interface AdminChannel {
   contentId: string;
   channelTag?: string | null;
+  channelNumber?: string | null;
   title?: string | null;
   category: string;
   contentType: string;
@@ -208,6 +209,7 @@ export interface AdminChannel {
   hlsUrl?: string | null;
   startedAt?: string | null;
   directHlsUrl?: string | null;
+  imageUrl?: string | null;
   profileId?: number | null;
   profileName?: string | null;
 }

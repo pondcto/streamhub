@@ -17,7 +17,7 @@ from app.db import SessionLocal
 from app.models.schedule import Schedule
 from app.services import controller
 from app.services.auth import get_stored_live_manifest_url
-from app.services.test_items import find_test_item
+from app.services.channel_registry import find_test_item
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,8 @@ from app.services.entitlement import EntitlementError
 from app.services.normalizers import normalize_test_season_item, normalize_test_video_card
 from app.services.stored_test_keys import get_stored_keys, get_store_updated_at, list_all_test_key_statuses
 from app.services.auth import get_session_info
-from app.services.test_items import TEST_ITEMS, TestItemSpec, find_test_item
+from app.services.channel_registry import find_test_item, get_all_items
+from app.services.test_items import TestItemSpec
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,11 @@ def _fallback_test_card(spec: TestItemSpec) -> TestVideoCard:
         title=spec.title or f"Test {spec.id}",
         type=spec.content_type,
         category=spec.category,
-        image=None,
+        image=spec.image_url,
         duration=None,
         description=spec.description,
         channel_tag=spec.channel_tag,
+        channel_number=spec.channel_number,
         manifest_hint=spec.manifest_hint,
         playable=True,
         metadataStatus="fallback",
@@ -43,7 +45,7 @@ async def get_test_videos() -> TestVideosResponse:
     items: list[TestVideoCard] = []
 
     async with DStvClient(settings) as client:
-        for spec in TEST_ITEMS:
+        for spec in get_all_items():
             # Live linear channels (akamai/gtm) have no VOD granular-catalogue
             # entry, so probing /vod/.../videos/<tag> always 404s. Skip straight
             # to the fallback card — the same result, without the wasted calls

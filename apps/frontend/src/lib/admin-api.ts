@@ -135,19 +135,18 @@ export function assignChannelProfile(
 }
 
 // --- Add Channel ---------------------------------------------------------
-// TODO(api): the backend has no channel-registration endpoint yet. The static
-// catalog (TEST_VIDEOS + backend test_items) is the source of channels, and a
-// channel additionally needs a captured manifest before it can stream. Once
-// `POST /api/admin/channels` exists, flip BACKEND_READY in AddChannelSection.
 
 export interface NewChannelInput {
   contentId: string;
-  title?: string;
-  channelTag?: string;
-  channelNumber?: string;
+  channelTag: string;
+  title: string;
+  manifestHint: string;
+  liveCdnHost: string;
   category?: string;
-  manifestHint?: string;
-  image?: string;
+  channelNumber?: string;
+  imageUrl?: string;
+  directHlsUrl?: string;
+  liveManifestCdn?: string;
 }
 
 export function createChannel(body: NewChannelInput): Promise<AdminChannel> {

@@ -20,7 +20,7 @@ from app.models.proxy import (
     ProxyProfileUpdate,
 )
 from app.models.proxy_profile import ChannelProfile, ProxyProfile
-from app.services.test_items import find_test_item
+from app.services.channel_registry import find_test_item
 
 logger = logging.getLogger(__name__)
 router = APIRouter(

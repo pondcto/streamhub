@@ -12,7 +12,7 @@ from app.services.normalizers import (
     normalize_catalog_page,
     normalize_season_detail,
 )
-from app.services.test_items import TEST_ITEMS
+from app.services.channel_registry import get_all_items
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["catalog"])
@@ -118,7 +118,7 @@ async def get_catalog(
 async def _granular_curated_sport_rails(client: DStvClient) -> list[CatalogRail]:
     """Build sport VOD rails from granular_catalogue (works when vod_sections JWT replay fails)."""
     cards: list[CatalogCard] = []
-    for spec in TEST_ITEMS:
+    for spec in get_all_items():
         if spec.content_type != "streaming" or not spec.stack_id or not spec.program_id or not spec.season_id:
             continue
         try:

@@ -31,7 +31,6 @@ import { useAdminPrefs } from "@/lib/admin-prefs";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import { resolveHlsUrl } from "@/lib/stream-api";
-import { TEST_VIDEOS } from "@/lib/test-items";
 import type { AdminChannel, ProxyProfile } from "@/lib/types";
 
 const ALL_SECTIONS: AdminSection[] = ["users", "channels", "schedule", "profiles", "settings"];
@@ -40,14 +39,11 @@ function isSection(value: string | null): value is AdminSection {
   return value != null && (ALL_SECTIONS as string[]).includes(value);
 }
 
-// Channel number + display name live in the frontend test catalog, keyed by the
-// same id the admin API returns as contentId.
-const META = new Map(TEST_VIDEOS.map((v) => [v.id, v]));
 function numberFor(ch: AdminChannel): string {
-  return META.get(ch.contentId)?.channelNumber ?? "—";
+  return ch.channelNumber ?? "—";
 }
 function nameFor(ch: AdminChannel): string {
-  return META.get(ch.contentId)?.title ?? ch.title ?? ch.channelTag ?? ch.contentId;
+  return ch.title ?? ch.channelTag ?? ch.contentId;
 }
 
 // Public-facing HLS endpoint for a channel — e.g. https://live2.mzolotv.com/TS2/TS2.m3u8.
@@ -470,13 +466,14 @@ function ChannelsTab({
 
       {/* Add-channel modal */}
       {showAdd && (
-        <Modal title="Add Channel" onClose={() => setShowAdd(false)} size="lg">
+        <Modal title="Add live channel" onClose={() => setShowAdd(false)} size="lg">
           <div className="p-5">
             <AddChannelSection
               onCreated={async () => {
                 await refresh();
                 setShowAdd(false);
               }}
+              onCancel={() => setShowAdd(false)}
             />
           </div>
         </Modal>

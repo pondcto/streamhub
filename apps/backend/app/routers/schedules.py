@@ -11,7 +11,7 @@ from app.db import get_db
 from app.models.schedule import Schedule
 from app.models.schedules import ScheduleCreate, SchedulePublic, ScheduleUpdate
 from app.services import scheduler
-from app.services.test_items import find_test_item
+from app.services.channel_registry import find_test_item
 
 logger = logging.getLogger(__name__)
 router = APIRouter(

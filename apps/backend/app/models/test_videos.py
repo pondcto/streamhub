@@ -12,6 +12,7 @@ class TestVideoCard(BaseModel):
     duration: Optional[str] = None
     image: Optional[str] = None
     channel_tag: Optional[str] = None
+    channel_number: Optional[str] = None
     manifest_hint: Optional[str] = None
     playable: bool = True
     metadataStatus: Literal["ok", "fallback"] = "ok"

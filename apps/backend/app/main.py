@@ -26,8 +26,10 @@ from app.routers import (
     tracked_session,
 )
 from app.services import controller, scheduler
+from app.db import SessionLocal
 from app.services.accounts import seed_admin
 from app.services.auth import initialize_session
+from app.services.channel_registry import initialize_registry
 from app.services.entitlement import EntitlementError
 from app.utils.redact import redact_sensitive
 
@@ -41,6 +43,8 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    async with SessionLocal() as db:
+        await initialize_registry(db)
     await seed_admin()
     initialize_session()
     await scheduler.start_scheduler()
