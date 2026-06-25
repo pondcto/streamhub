@@ -167,6 +167,13 @@ async def start_channel(
             f"wv-mpd-streaming binary not found at '{binary}'. "
             "Build dstv-widevine-decryption and set WV_STREAMING_BINARY in .env."
         )
+    # Resolve to an absolute path NOW, while the process cwd is still the backend
+    # dir (where the existence check above passed). WV_STREAMING_BINARY may be
+    # relative (the default is "../../dstv-widevine-decryption/bin/..."), and the
+    # Popen below sets cwd= to the dstv project root. POSIX resolves a relative
+    # argv[0] against the *child's* cwd, so a relative cmd[0] would point at a
+    # non-existent path and exec would fail with FileNotFoundError (ENOENT).
+    binary = binary.resolve()
 
     logs_dir = Path(settings.hls_logs_dir)
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -209,7 +216,7 @@ async def start_channel(
         cmd,
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        cwd=str(binary.resolve().parent.parent),  # project root (configs/ live here)
+        cwd=str(binary.parent.parent),  # project root (configs/ live here)
         start_new_session=True,  # own process group, so we can signal the whole tree
     )
     proc = ChannelProcess(
