@@ -9,6 +9,7 @@ import Modal from "@/components/Modal";
 import RequireAuth from "@/components/RequireAuth";
 import SchedulesSection from "@/components/SchedulesSection";
 import AddChannelSection from "@/components/admin/AddChannelSection";
+import EditChannelSection from "@/components/admin/EditChannelSection";
 import AdminSectionHeader from "@/components/admin/AdminSectionHeader";
 import AdminSidebar, { SECTION_META, type AdminSection } from "@/components/admin/AdminSidebar";
 import ProfilesSection from "@/components/admin/ProfilesSection";
@@ -20,6 +21,7 @@ import Button from "@/components/ui/Button";
 import Field from "@/components/ui/Field";
 import {
   assignChannelProfile,
+  deleteChannel,
   downloadLogs,
   fetchLogs,
   listChannels,
@@ -66,14 +68,14 @@ function StatCard({ label, value, accent }: { label: string; value: number; acce
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-2xl border px-4 py-3.5",
+        "relative overflow-hidden rounded-xl border px-3 py-2.5 sm:rounded-2xl sm:px-4 sm:py-3.5",
         accent ? "border-accent/30 bg-accent/10" : "border-white/10 bg-surface-raised"
       )}
     >
-      <p className="text-[11px] font-medium uppercase tracking-wide text-content-faint">{label}</p>
+      <p className="text-[10px] font-medium uppercase tracking-wide text-content-faint sm:text-[11px]">{label}</p>
       <p
         className={cn(
-          "mt-1 text-2xl font-bold tabular-nums",
+          "mt-0.5 text-xl font-bold tabular-nums sm:mt-1 sm:text-2xl",
           accent ? "text-accent-soft" : "text-white"
         )}
       >
@@ -101,6 +103,254 @@ function StatusBadge({ running }: { running: boolean }) {
   );
 }
 
+function TableIconButton({
+  label,
+  onClick,
+  disabled,
+  loading,
+  danger,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  danger?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      disabled={disabled || loading}
+      className={cn(
+        "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors",
+        danger
+          ? "border-danger/20 text-danger-soft hover:bg-danger/10"
+          : "border-white/10 text-content-faint hover:bg-white/5 hover:text-white",
+        (disabled || loading) && "pointer-events-none opacity-50",
+      )}
+    >
+      {loading ? (
+        <span
+          className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+          aria-hidden="true"
+        />
+      ) : (
+        children
+      )}
+    </button>
+  );
+}
+
+function ChannelPagination({
+  filteredLength,
+  firstRow,
+  lastRow,
+  currentPage,
+  totalPages,
+  onPrev,
+  onNext,
+}: {
+  filteredLength: number;
+  firstRow: number;
+  lastRow: number;
+  currentPage: number;
+  totalPages: number;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-t border-white/10 px-3 py-2.5 text-xs text-content-faint sm:flex-row sm:items-center sm:justify-between sm:px-4">
+      <span className="text-center sm:text-left">
+        {filteredLength === 0
+          ? "No results"
+          : `Showing ${firstRow}–${lastRow} of ${filteredLength}`}
+      </span>
+      <div className="flex items-center justify-center gap-1.5">
+        <Button size="sm" variant="secondary" disabled={currentPage <= 1} onClick={onPrev}>
+          Prev
+        </Button>
+        <span className="px-2 tabular-nums">
+          Page {currentPage} / {totalPages}
+        </span>
+        <Button size="sm" variant="secondary" disabled={currentPage >= totalPages} onClick={onNext}>
+          Next
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ChannelActionsBar({
+  ch,
+  busy,
+  onLogs,
+  onPreview,
+  onCopyUrl,
+  onEdit,
+  onDelete,
+  onAct,
+  className,
+}: {
+  ch: AdminChannel;
+  busy: string | null;
+  onLogs: (contentId: string) => void;
+  onPreview: (contentId: string, url: string) => void;
+  onCopyUrl: (ch: AdminChannel) => void;
+  onEdit: (ch: AdminChannel) => void;
+  onDelete: (ch: AdminChannel) => void;
+  onAct: (contentId: string, action: "start" | "stop") => void;
+  className?: string;
+}) {
+  const previewUrl =
+    ch.directHlsUrl ?? (ch.running && ch.hlsUrl ? resolveHlsUrl(ch.hlsUrl) : null);
+
+  return (
+    <div
+      className={cn(
+        "flex flex-nowrap items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        className,
+      )}
+    >
+      <TableIconButton label="Logs" onClick={() => onLogs(ch.contentId)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-3.5 w-3.5" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6M9 16h6M9 8h6M5 20h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H9l-2 2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2Z" />
+        </svg>
+      </TableIconButton>
+      {previewUrl && (
+        <TableIconButton label="Preview" onClick={() => onPreview(ch.contentId, previewUrl)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-3.5 w-3.5" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1 1 0 0 1 0-.644C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+          </svg>
+        </TableIconButton>
+      )}
+      {publicStreamUrl(ch) && (
+        <TableIconButton label="Copy URL" onClick={() => onCopyUrl(ch)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-3.5 w-3.5" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2M8 16h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2Z" />
+          </svg>
+        </TableIconButton>
+      )}
+      {!ch.running && (
+        <>
+          <TableIconButton label="Edit channel" onClick={() => onEdit(ch)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-3.5 w-3.5" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 20h4l10.5-10.5a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4Z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6.5 17.5 10.5" />
+            </svg>
+          </TableIconButton>
+          <TableIconButton label="Delete channel" danger onClick={() => onDelete(ch)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-3.5 w-3.5" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-7 4v6m4-6v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12" />
+            </svg>
+          </TableIconButton>
+        </>
+      )}
+      {ch.running ? (
+        <TableIconButton
+          label="Stop channel"
+          danger
+          loading={busy === ch.contentId}
+          onClick={() => onAct(ch.contentId, "stop")}
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" className="h-3 w-3" aria-hidden="true">
+            <rect x="6" y="6" width="12" height="12" rx="1" />
+          </svg>
+        </TableIconButton>
+      ) : (
+        <TableIconButton
+          label={ch.hasManifest ? "Start channel" : "No captured manifest"}
+          disabled={!ch.hasManifest}
+          loading={busy === ch.contentId}
+          onClick={() => onAct(ch.contentId, "start")}
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5" aria-hidden="true">
+            <path d="M8 5.14v13.72a1 1 0 0 0 1.54.84l10.79-6.86a1 1 0 0 0 0-1.68L9.54 4.3A1 1 0 0 0 8 5.14Z" />
+          </svg>
+        </TableIconButton>
+      )}
+    </div>
+  );
+}
+
+function ChannelMobileCard({
+  ch,
+  busy,
+  onAssign,
+  onLogs,
+  onPreview,
+  onCopyUrl,
+  onEdit,
+  onDelete,
+  onAct,
+}: {
+  ch: AdminChannel;
+  busy: string | null;
+  onAssign: (ch: AdminChannel) => void;
+  onLogs: (contentId: string) => void;
+  onPreview: (contentId: string, url: string) => void;
+  onCopyUrl: (ch: AdminChannel) => void;
+  onEdit: (ch: AdminChannel) => void;
+  onDelete: (ch: AdminChannel) => void;
+  onAct: (contentId: string, action: "start" | "stop") => void;
+}) {
+  return (
+    <article className="rounded-2xl border border-white/10 bg-surface-raised p-3.5 shadow-card">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-sm font-bold tabular-nums text-content-faint">
+              {numberFor(ch)}
+            </span>
+            <span className="truncate font-semibold text-white">{nameFor(ch)}</span>
+            {!ch.hasManifest && <Badge tone="warn">no capture</Badge>}
+          </div>
+          <p className="mt-1 font-mono text-xs text-content-faint">{ch.contentId}</p>
+        </div>
+        <StatusBadge running={ch.running} />
+      </div>
+
+      <div className="mb-3 flex items-center gap-2 text-xs">
+        <span className="text-content-faint">Profile</span>
+        {ch.profileName ? (
+          <Badge tone="accent" className="max-w-[10rem] truncate">
+            {ch.profileName}
+          </Badge>
+        ) : (
+          <span className="text-content-faint">—</span>
+        )}
+        <button
+          type="button"
+          onClick={() => onAssign(ch)}
+          aria-label={`Edit profile for ${nameFor(ch)}`}
+          title="Edit profile"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/10 text-content-faint transition-colors hover:bg-white/5 hover:text-white"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-3.5 w-3.5" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 20h4l10.5-10.5a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4Z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6.5 17.5 10.5" />
+          </svg>
+        </button>
+      </div>
+
+      <ChannelActionsBar
+        ch={ch}
+        busy={busy}
+        onLogs={onLogs}
+        onPreview={onPreview}
+        onCopyUrl={onCopyUrl}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onAct={onAct}
+      />
+    </article>
+  );
+}
+
 function ChannelsTab({
   channels,
   refresh,
@@ -120,6 +370,9 @@ function ChannelsTab({
   const [logText, setLogText] = useState("");
   const [preview, setPreview] = useState<{ contentId: string; url: string } | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [editTarget, setEditTarget] = useState<AdminChannel | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AdminChannel | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const logOffset = useRef(0);
   const logBoxRef = useRef<HTMLPreElement>(null);
 
@@ -233,6 +486,21 @@ function ChannelsTab({
     [notify],
   );
 
+  const confirmDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    try {
+      await deleteChannel(deleteTarget.contentId);
+      await refresh();
+      notify(`Removed ${nameFor(deleteTarget)}.`, "success");
+      setDeleteTarget(null);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Failed to delete channel.", "error");
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [deleteTarget, refresh, notify]);
+
   // Filter + paginate.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -260,9 +528,36 @@ function ChannelsTab({
     setPage(1);
   }, [search, statusFilter, pageSize]);
 
+  const openPreview = useCallback((contentId: string, url: string) => {
+    setPreview({ contentId, url });
+  }, []);
+
+  const actionProps = {
+    busy,
+    onLogs: setLogChannel,
+    onPreview: openPreview,
+    onCopyUrl: copyUrl,
+    onEdit: setEditTarget,
+    onDelete: setDeleteTarget,
+    onAct: act,
+  };
+
+  const paginationProps = {
+    filteredLength: filtered.length,
+    firstRow,
+    lastRow,
+    currentPage,
+    totalPages,
+    onPrev: () => setPage((p) => Math.max(1, p - 1)),
+    onNext: () => setPage((p) => Math.min(totalPages, p + 1)),
+  };
+
+  const emptyMessage =
+    search || statusFilter !== "all" ? "No channels match your filters." : "No channels.";
+
   return (
     <>
-      <div className="mb-6 grid grid-cols-3 gap-3 sm:max-w-md">
+      <div className="mb-6 grid grid-cols-3 gap-2 sm:gap-3 lg:max-w-md">
         <StatCard label="Channels" value={total} />
         <StatCard label="Running" value={running} accent />
         <StatCard label="Captured" value={captured} />
@@ -271,10 +566,10 @@ function ChannelsTab({
       {/* Toolbar: search + filter (sticky glass) */}
       <div className="sticky top-16 z-20 mb-4 flex flex-col gap-2 rounded-2xl border border-white/10 bg-surface-raised/70 p-2 backdrop-blur-md sm:flex-row sm:items-center">
         <Field
-          containerClassName="flex-1"
+          containerClassName="min-w-0 flex-1"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by number, name, or Content ID…"
+          placeholder="Search channels…"
           leftIcon={
             <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="h-4 w-4" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35m1.85-4.4a6.25 6.25 0 1 1-12.5 0 6.25 6.25 0 0 1 12.5 0Z" />
@@ -284,13 +579,14 @@ function ChannelsTab({
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-          className="rounded-lg border border-white/10 bg-surface-overlay px-3 py-2.5 text-sm text-white transition-colors focus:border-accent/50 focus:outline-none sm:w-44"
+          className="w-full rounded-lg border border-white/10 bg-surface-overlay px-3 py-2.5 text-sm text-white transition-colors focus:border-accent/50 focus:outline-none sm:w-44"
         >
           <option value="all">All statuses</option>
           <option value="running">Running</option>
           <option value="stopped">Stopped</option>
         </select>
         <Button
+          className="w-full shrink-0 sm:w-auto"
           onClick={() => setShowAdd(true)}
           leftIcon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} className="h-4 w-4" aria-hidden="true">
@@ -302,145 +598,99 @@ function ChannelsTab({
         </Button>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-surface-raised shadow-card">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-white/10 bg-white/[0.02] text-left text-xs uppercase tracking-wide text-content-faint">
-              <th className="px-4 py-2 font-medium">No.</th>
-              <th className="px-4 py-2 font-medium">Channel</th>
-              <th className="px-4 py-2 font-medium">Content ID</th>
-              <th className="px-4 py-2 font-medium">Profile</th>
-              <th className="px-4 py-2 font-medium">Status</th>
-              <th className="px-4 py-2 text-right font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pageItems.map((ch) => (
-              <tr key={ch.contentId} className="border-b border-white/5 transition-colors last:border-0 hover:bg-white/[0.03]">
-                <td className={cn("px-4", rowPad)}>
-                  <span className="font-mono text-lg font-bold text-white">{numberFor(ch)}</span>
-                </td>
-                <td className={cn("px-4", rowPad)}>
-                  <span className="text-base font-semibold text-white">{nameFor(ch)}</span>
-                  {!ch.hasManifest && (
-                    <span className="ml-2 align-middle">
-                      <Badge tone="warn">no capture</Badge>
-                    </span>
-                  )}
-                </td>
-                <td className={cn("px-4 font-mono text-xs text-content-faint", rowPad)}>{ch.contentId}</td>
-                <td className={cn("px-4", rowPad)}>
-                  <div className="flex items-center gap-2">
-                    {ch.profileName ? (
-                      <Badge tone="accent">{ch.profileName}</Badge>
-                    ) : (
-                      <span className="text-xs text-content-faint">—</span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => openAssign(ch)}
-                      aria-label={`Edit profile for ${nameFor(ch)}`}
-                      title="Edit profile"
-                      className="rounded-md p-1 text-content-faint transition-colors hover:bg-white/5 hover:text-white"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-4 w-4" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 20h4l10.5-10.5a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4Z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6.5 17.5 10.5" />
-                      </svg>
-                    </button>
-                  </div>
-                </td>
-                <td className={cn("px-4", rowPad)}>
-                  <StatusBadge running={ch.running} />
-                </td>
-                <td className={cn("px-4", rowPad)}>
-                  <div className="flex items-center justify-end gap-2">
-                    <Button size="sm" variant="secondary" onClick={() => setLogChannel(ch.contentId)}>
-                      Logs
-                    </Button>
-                    {(ch.directHlsUrl || (ch.running && ch.hlsUrl)) && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() =>
-                          setPreview({
-                            contentId: ch.contentId,
-                            url: ch.directHlsUrl ?? resolveHlsUrl(ch.hlsUrl!),
-                          })
-                        }
-                      >
-                        Preview
-                      </Button>
-                    )}
-                    {publicStreamUrl(ch) && (
-                      <Button size="sm" variant="secondary" onClick={() => copyUrl(ch)}>
-                        Copy URL
-                      </Button>
-                    )}
-                    {ch.running ? (
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        loading={busy === ch.contentId}
-                        onClick={() => act(ch.contentId, "stop")}
-                      >
-                        Stop
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        loading={busy === ch.contentId}
-                        disabled={!ch.hasManifest}
-                        title={ch.hasManifest ? "" : "No captured manifest — capture via the tracker first"}
-                        onClick={() => act(ch.contentId, "start")}
-                      >
-                        Start
-                      </Button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-content-faint">
-                  {search || statusFilter !== "all" ? "No channels match your filters." : "No channels."}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-
-        {/* Pagination footer */}
-        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-2.5 text-xs text-content-faint">
-          <span>
-            {filtered.length === 0
-              ? "No results"
-              : `Showing ${firstRow}–${lastRow} of ${filtered.length}`}
-          </span>
-          <div className="flex items-center gap-1.5">
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={currentPage <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Prev
-            </Button>
-            <span className="px-2 tabular-nums">
-              Page {currentPage} / {totalPages}
-            </span>
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={currentPage >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Next
-            </Button>
+      {/* Mobile / tablet: card list */}
+      <div className="space-y-3 lg:hidden">
+        {pageItems.map((ch) => (
+          <ChannelMobileCard
+            key={ch.contentId}
+            ch={ch}
+            onAssign={openAssign}
+            {...actionProps}
+          />
+        ))}
+        {filtered.length === 0 && (
+          <div className="rounded-2xl border border-white/10 bg-surface-raised px-4 py-12 text-center text-sm text-content-faint">
+            {emptyMessage}
           </div>
+        )}
+        {filtered.length > 0 && (
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-surface-raised shadow-card">
+            <ChannelPagination {...paginationProps} />
+          </div>
+        )}
+      </div>
+
+      {/* Desktop: table */}
+      <div className="hidden overflow-hidden rounded-2xl border border-white/10 bg-surface-raised shadow-card lg:block">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02] text-left text-xs uppercase tracking-wide text-content-faint">
+                <th className="w-14 whitespace-nowrap px-3 py-2 font-medium">No.</th>
+                <th className="whitespace-nowrap px-3 py-2 font-medium">Channel</th>
+                <th className="w-24 whitespace-nowrap px-3 py-2 font-medium">Content ID</th>
+                <th className="w-36 whitespace-nowrap px-3 py-2 font-medium">Profile</th>
+                <th className="w-28 whitespace-nowrap px-3 py-2 font-medium">Status</th>
+                <th className="w-[1%] whitespace-nowrap px-3 py-2 text-right font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageItems.map((ch) => (
+                <tr key={ch.contentId} className="border-b border-white/5 transition-colors last:border-0 hover:bg-white/[0.03]">
+                  <td className={cn("whitespace-nowrap px-3", rowPad)}>
+                    <span className="font-mono text-base font-bold tabular-nums text-white">{numberFor(ch)}</span>
+                  </td>
+                  <td className={cn("whitespace-nowrap px-3", rowPad)}>
+                    <span className="inline-flex items-center gap-2">
+                      <span className="font-semibold text-white">{nameFor(ch)}</span>
+                      {!ch.hasManifest && <Badge tone="warn">no capture</Badge>}
+                    </span>
+                  </td>
+                  <td className={cn("whitespace-nowrap px-3 font-mono text-xs text-content-faint", rowPad)}>
+                    {ch.contentId}
+                  </td>
+                  <td className={cn("whitespace-nowrap px-3", rowPad)}>
+                    <div className="flex items-center gap-1.5">
+                      {ch.profileName ? (
+                        <Badge tone="accent" className="max-w-[7rem] truncate">
+                          {ch.profileName}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-content-faint">—</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => openAssign(ch)}
+                        aria-label={`Edit profile for ${nameFor(ch)}`}
+                        title="Edit profile"
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/10 text-content-faint transition-colors hover:bg-white/5 hover:text-white"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-3.5 w-3.5" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 20h4l10.5-10.5a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4Z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6.5 17.5 10.5" />
+                        </svg>
+                      </button>
+                    </div>
+                  </td>
+                  <td className={cn("whitespace-nowrap px-3", rowPad)}>
+                    <StatusBadge running={ch.running} />
+                  </td>
+                  <td className={cn("whitespace-nowrap px-3", rowPad)}>
+                    <ChannelActionsBar ch={ch} className="justify-end" {...actionProps} />
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-content-faint">
+                    {emptyMessage}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
+        <ChannelPagination {...paginationProps} />
       </div>
 
       {/* Logs modal */}
@@ -467,7 +717,7 @@ function ChannelsTab({
       {/* Add-channel modal */}
       {showAdd && (
         <Modal title="Add live channel" onClose={() => setShowAdd(false)} size="lg">
-          <div className="p-5">
+          <div className="p-4 sm:p-5">
             <AddChannelSection
               onCreated={async () => {
                 await refresh();
@@ -475,6 +725,56 @@ function ChannelsTab({
               }}
               onCancel={() => setShowAdd(false)}
             />
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit-channel modal */}
+      {editTarget && (
+        <Modal
+          title={<>Edit channel · <span className="font-semibold text-white">{nameFor(editTarget)}</span></>}
+          onClose={() => setEditTarget(null)}
+          size="lg"
+        >
+          <div className="p-4 sm:p-5">
+            <EditChannelSection
+              channel={editTarget}
+              onSaved={async () => {
+                await refresh();
+                setEditTarget(null);
+              }}
+              onCancel={() => setEditTarget(null)}
+            />
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <Modal
+          title={<>Remove channel · <span className="font-semibold text-white">{nameFor(deleteTarget)}</span></>}
+          onClose={() => !deleteBusy && setDeleteTarget(null)}
+          size="md"
+        >
+          <div className="space-y-4 p-4 sm:p-5">
+            <p className="text-sm leading-relaxed text-content-muted">
+              Permanently remove{" "}
+              <span className="font-medium text-white">{nameFor(deleteTarget)}</span> (
+              <span className="font-mono text-content-faint">{deleteTarget.contentId}</span>
+              )? This also clears its proxy assignment and schedules. The channel must be stopped first.
+            </p>
+            <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
+              <Button
+                variant="secondary"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleteBusy}
+              >
+                Cancel
+              </Button>
+              <Button variant="danger" loading={deleteBusy} onClick={confirmDelete}>
+                Delete channel
+              </Button>
+            </div>
           </div>
         </Modal>
       )}

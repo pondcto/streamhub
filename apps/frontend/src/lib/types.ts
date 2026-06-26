@@ -203,6 +203,9 @@ export interface AdminChannel {
   title?: string | null;
   category: string;
   contentType: string;
+  manifestHint?: string | null;
+  liveCdnHost?: string | null;
+  liveManifestCdn?: string | null;
   hasManifest: boolean;
   running: boolean;
   pid?: number | null;

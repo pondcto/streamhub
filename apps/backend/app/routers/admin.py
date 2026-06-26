@@ -15,10 +15,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth_deps import require_admin, require_admin_download
 from app.config import get_settings
 from app.db import get_db
-from app.models.admin import AdminChannel, AdminChannelCreate, AdminChannelList, LogChunk
+from app.models.admin import AdminChannel, AdminChannelCreate, AdminChannelList, AdminChannelUpdate, LogChunk
 from app.services import controller, proxies
 from app.services.auth import get_stored_live_manifest_url
-from app.services.channel_registry import create_channel, find_test_item, get_all_items
+from app.services.channel_registry import (
+    create_channel,
+    delete_channel,
+    find_test_item,
+    get_all_items,
+    update_channel,
+)
 from app.services.live_manifest import akamai_token_expires_at, is_akamai_token_expired
 from app.services.test_items import TestItemSpec
 
@@ -32,6 +38,17 @@ download_router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 def _manifest_for(channel_tag: str | None) -> str | None:
     return get_stored_live_manifest_url(channel_tag) if channel_tag else None
+
+
+def _ensure_channel_stopped(content_id: str) -> None:
+    if controller.is_running(content_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "CHANNEL_RUNNING",
+                "message": f"Stop {content_id} before editing or deleting it.",
+            },
+        )
 
 
 def _admin_channel_from_spec(
@@ -48,6 +65,9 @@ def _admin_channel_from_spec(
         title=spec.title,
         category=spec.category,
         contentType=spec.content_type,
+        manifestHint=spec.manifest_hint,
+        liveCdnHost=spec.live_cdn_host,
+        liveManifestCdn=spec.live_manifest_cdn,
         hasManifest=bool(_manifest_for(spec.channel_tag)),
         running=info is not None,
         pid=info["pid"] if info else None,
@@ -100,6 +120,74 @@ async def register_channel(
             detail={"code": "INVALID_CHANNEL", "message": str(exc)},
         ) from exc
     return _admin_channel_from_spec(spec)
+
+
+@router.patch("/channels/{content_id}", response_model=AdminChannel)
+async def edit_channel(
+    content_id: str,
+    body: AdminChannelUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> AdminChannel:
+    if find_test_item(content_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "UNKNOWN_CHANNEL", "message": f"Unknown channel: {content_id}"},
+        )
+    _ensure_channel_stopped(content_id)
+
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "NO_CHANGES", "message": "No fields to update."},
+        )
+
+    try:
+        spec = await update_channel(
+            db,
+            content_id,
+            channel_tag=updates.get("channelTag"),
+            title=updates.get("title"),
+            manifest_hint=updates.get("manifestHint"),
+            live_cdn_host=updates.get("liveCdnHost"),
+            category=updates.get("category"),
+            channel_number=updates.get("channelNumber"),
+            image_url=updates.get("imageUrl"),
+            live_manifest_cdn=updates.get("liveManifestCdn"),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_CHANNEL", "message": str(exc)},
+        ) from exc
+
+    assignments = await proxies.assignment_map(db)
+    profile = assignments.get(spec.id)
+    return _admin_channel_from_spec(
+        spec,
+        profile_id=profile.id if profile else None,
+        profile_name=profile.name if profile else None,
+    )
+
+
+@router.delete("/channels/{content_id}")
+async def remove_channel(content_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    if find_test_item(content_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "UNKNOWN_CHANNEL", "message": f"Unknown channel: {content_id}"},
+        )
+    _ensure_channel_stopped(content_id)
+
+    try:
+        await delete_channel(db, content_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_CHANNEL", "message": str(exc)},
+        ) from exc
+
+    return {"contentId": content_id, "deleted": True}
 
 
 @router.post("/channels/{content_id}/start", response_model=AdminChannel)
@@ -171,6 +259,9 @@ async def start_channel(content_id: str, db: AsyncSession = Depends(get_db)) -> 
         title=spec.title,
         category=spec.category,
         contentType=spec.content_type,
+        manifestHint=spec.manifest_hint,
+        liveCdnHost=spec.live_cdn_host,
+        liveManifestCdn=spec.live_manifest_cdn,
         hasManifest=True,
         running=True,
         pid=info["pid"],

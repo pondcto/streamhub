@@ -157,6 +157,33 @@ export function createChannel(body: NewChannelInput): Promise<AdminChannel> {
   });
 }
 
+export interface UpdateChannelInput {
+  channelTag?: string;
+  title?: string;
+  manifestHint?: string;
+  liveCdnHost?: string;
+  category?: string;
+  channelNumber?: string;
+  imageUrl?: string;
+  liveManifestCdn?: string;
+}
+
+export function updateChannel(contentId: string, body: UpdateChannelInput): Promise<AdminChannel> {
+  return authed(`/api/admin/channels/${encodeURIComponent(contentId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteChannel(
+  contentId: string,
+): Promise<{ contentId: string; deleted: boolean }> {
+  return authed(`/api/admin/channels/${encodeURIComponent(contentId)}`, {
+    method: "DELETE",
+  });
+}
+
 // --- User Management -----------------------------------------------------
 // TODO(api): accounts currently expose only login/signup/me. These admin
 // endpoints don't exist yet; UserManagementSection keeps actions disabled

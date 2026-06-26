@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Literal, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.channel import Channel
+from app.models.proxy_profile import ChannelProfile
+from app.models.schedule import Schedule
 from app.services.test_items import DEFAULT_SEED_ITEMS, TestItemSpec
 
 logger = logging.getLogger(__name__)
@@ -175,3 +177,97 @@ async def create_channel(
     await _reload_cache(db)
     logger.info("Registered channel %s (%s).", content_id, channel_tag)
     return spec
+
+
+async def update_channel(
+    db: AsyncSession,
+    content_id: str,
+    *,
+    channel_tag: str | None = None,
+    title: str | None = None,
+    manifest_hint: str | None = None,
+    live_cdn_host: str | None = None,
+    category: str | None = None,
+    channel_number: str | None = None,
+    image_url: str | None = None,
+    live_manifest_cdn: str | None = None,
+    clear_image_url: bool = False,
+) -> TestItemSpec:
+    content_id = content_id.strip()
+    row = await db.get(Channel, content_id)
+    if row is None:
+        raise ValueError(f"Unknown channel: {content_id}")
+
+    if channel_tag is not None:
+        channel_tag = channel_tag.strip().upper()
+        if not channel_tag:
+            raise ValueError("Channel tag is required.")
+        tag_taken = await db.scalar(
+            select(Channel.content_id).where(
+                func.upper(Channel.channel_tag) == channel_tag,
+                Channel.content_id != content_id,
+            )
+        )
+        if tag_taken:
+            raise ValueError(f"Channel tag '{channel_tag}' is already used by '{tag_taken}'.")
+        row.channel_tag = channel_tag
+
+    if title is not None:
+        title = title.strip()
+        if not title:
+            raise ValueError("Title is required.")
+        row.title = title
+        host = (row.live_cdn_host or "").strip()
+        row.description = f"Live linear — {title} ({host}, hdntl)." if host else row.description
+
+    if manifest_hint is not None:
+        manifest_hint = manifest_hint.strip()
+        if not manifest_hint:
+            raise ValueError("Manifest hint is required.")
+        row.manifest_hint = manifest_hint
+
+    if live_cdn_host is not None:
+        live_cdn_host = live_cdn_host.strip().lower()
+        if not live_cdn_host:
+            raise ValueError("Live CDN host is required.")
+        row.live_cdn_host = live_cdn_host
+        if row.title:
+            row.description = f"Live linear — {row.title} ({live_cdn_host}, hdntl)."
+
+    if category is not None:
+        row.category = category.strip() or "Live"
+
+    if channel_number is not None:
+        row.channel_number = channel_number.strip() or None
+
+    if clear_image_url:
+        row.image_url = None
+    elif image_url is not None:
+        row.image_url = image_url.strip() or None
+
+    if live_manifest_cdn is not None:
+        cdn = live_manifest_cdn.strip().lower()
+        if cdn in ("akamai", "gtm"):
+            row.live_manifest_cdn = cdn
+
+    await db.commit()
+    await _reload_cache(db)
+    spec = find_test_item(content_id)
+    if spec is None:
+        raise ValueError(f"Unknown channel: {content_id}")
+    logger.info("Updated channel %s.", content_id)
+    return spec
+
+
+async def delete_channel(db: AsyncSession, content_id: str) -> None:
+    content_id = content_id.strip()
+    row = await db.get(Channel, content_id)
+    if row is None:
+        raise ValueError(f"Unknown channel: {content_id}")
+
+    await db.execute(delete(ChannelProfile).where(ChannelProfile.content_id == content_id))
+    await db.execute(delete(Schedule).where(Schedule.content_id == content_id))
+    await db.delete(row)
+    await db.commit()
+    await _reload_cache(db)
+    logger.info("Deleted channel %s.", content_id)

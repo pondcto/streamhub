@@ -10,6 +10,9 @@ class AdminChannel(BaseModel):
     title: Optional[str] = None
     category: str
     contentType: str
+    manifestHint: Optional[str] = None
+    liveCdnHost: Optional[str] = None
+    liveManifestCdn: Optional[str] = None
     hasManifest: bool
     running: bool
     pid: Optional[int] = None
@@ -19,6 +22,17 @@ class AdminChannel(BaseModel):
     imageUrl: Optional[str] = None
     profileId: Optional[int] = None
     profileName: Optional[str] = None
+
+
+class AdminChannelUpdate(BaseModel):
+    channelTag: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    manifestHint: Optional[str] = Field(default=None, min_length=1, max_length=2048)
+    liveCdnHost: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    category: Optional[str] = Field(default=None, max_length=64)
+    channelNumber: Optional[str] = Field(default=None, max_length=16)
+    imageUrl: Optional[str] = Field(default=None, max_length=2048)
+    liveManifestCdn: Optional[str] = Field(default=None, max_length=16)
 
 
 class AdminChannelCreate(BaseModel):
