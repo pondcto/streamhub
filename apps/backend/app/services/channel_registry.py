@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.channel import Channel
 from app.models.proxy_profile import ChannelProfile
 from app.models.schedule import Schedule
+from app.services.channel_thumbnail_url import ThumbnailUrlError, normalize_live_thumbnail_url
 from app.services.test_items import DEFAULT_SEED_ITEMS, TestItemSpec
 
 logger = logging.getLogger(__name__)
@@ -122,7 +123,6 @@ async def create_channel(
     category: str = "Live",
     channel_number: str | None = None,
     image_url: str | None = None,
-    direct_hls_url: str | None = None,
     live_manifest_cdn: str = "akamai",
 ) -> TestItemSpec:
     content_id = content_id.strip()
@@ -141,6 +141,12 @@ async def create_channel(
         raise ValueError("Manifest hint is required.")
     if not live_cdn_host:
         raise ValueError("Live CDN host is required.")
+    if not image_url or not str(image_url).strip():
+        raise ValueError("Thumbnail image URL is required.")
+    try:
+        image_url = normalize_live_thumbnail_url(str(image_url), required=True)
+    except ThumbnailUrlError as exc:
+        raise ValueError(str(exc)) from exc
 
     existing = await db.get(Channel, content_id)
     if existing is not None:
@@ -169,8 +175,8 @@ async def create_channel(
         title=title,
         description=f"Live linear — {title} ({live_cdn_host}, hdntl).",
         category=category.strip() or "Live",
-        direct_hls_url=(direct_hls_url or "").strip() or None,
-        image_url=(image_url or "").strip() or None,
+        direct_hls_url=None,
+        image_url=image_url,
     )
     db.add(_spec_to_row(spec))
     await db.commit()
@@ -241,9 +247,12 @@ async def update_channel(
         row.channel_number = channel_number.strip() or None
 
     if clear_image_url:
-        row.image_url = None
+        raise ValueError("Thumbnail image URL is required.")
     elif image_url is not None:
-        row.image_url = image_url.strip() or None
+        try:
+            row.image_url = normalize_live_thumbnail_url(image_url, required=True)
+        except ThumbnailUrlError as exc:
+            raise ValueError(str(exc)) from exc
 
     if live_manifest_cdn is not None:
         cdn = live_manifest_cdn.strip().lower()

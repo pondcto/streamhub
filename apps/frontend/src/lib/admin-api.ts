@@ -144,8 +144,7 @@ export interface NewChannelInput {
   liveCdnHost: string;
   category?: string;
   channelNumber?: string;
-  imageUrl?: string;
-  directHlsUrl?: string;
+  imageUrl: string;
   liveManifestCdn?: string;
 }
 
@@ -164,7 +163,7 @@ export interface UpdateChannelInput {
   liveCdnHost?: string;
   category?: string;
   channelNumber?: string;
-  imageUrl?: string;
+  imageUrl: string;
   liveManifestCdn?: string;
 }
 

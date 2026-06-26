@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Literal, Optional
 
+from app.services.channel_thumbnail_url import EXAMPLE_LIVE_THUMBNAIL
+
 
 @dataclass(frozen=True)
 class TestItemSpec:
@@ -59,7 +61,7 @@ DEFAULT_SEED_ITEMS: tuple[TestItemSpec, ...] = (
         live_cdn_host="r-live-cache.akamaized.net",
         title="SuperSport 4",
         channel_number="201",
-        image_url="/images/programthumbnail_3.png",
+        image_url=EXAMPLE_LIVE_THUMBNAIL,
     ),
     _akamai_live(
         channel_tag="SH2",
@@ -67,7 +69,7 @@ DEFAULT_SEED_ITEMS: tuple[TestItemSpec, ...] = (
         live_cdn_host="i-live-cache.akamaized.net",
         title="SuperSport 2",
         channel_number="202",
-        image_url="/images/programthumbnail_2.png",
+        image_url=EXAMPLE_LIVE_THUMBNAIL,
     ),
     _akamai_live(
         channel_tag="TS2",
@@ -75,7 +77,7 @@ DEFAULT_SEED_ITEMS: tuple[TestItemSpec, ...] = (
         live_cdn_host="i-live-cache.akamaized.net",
         title="SuperSport 3",
         channel_number="203",
-        image_url="/images/programthumbnail_5.png",
+        image_url=EXAMPLE_LIVE_THUMBNAIL,
         direct_hls_url="https://live2.mzolotv.com/TS2/TS2.m3u8",
     ),
     _akamai_live(
@@ -84,7 +86,7 @@ DEFAULT_SEED_ITEMS: tuple[TestItemSpec, ...] = (
         live_cdn_host="i-live-cache.akamaized.net",
         title="SuperSport 11",
         channel_number="211",
-        image_url="/images/programthumbnail_4.png",
+        image_url=EXAMPLE_LIVE_THUMBNAIL,
     ),
     _akamai_live(
         channel_tag="9HD",
@@ -92,7 +94,7 @@ DEFAULT_SEED_ITEMS: tuple[TestItemSpec, ...] = (
         live_cdn_host="r-live-cache.akamaized.net",
         title="SuperSport 9",
         channel_number="209",
-        image_url="/images/programthumbnail_1.png",
+        image_url=EXAMPLE_LIVE_THUMBNAIL,
     ),
     _akamai_live(
         channel_tag="12H",
@@ -100,7 +102,7 @@ DEFAULT_SEED_ITEMS: tuple[TestItemSpec, ...] = (
         live_cdn_host="r-live-cache.akamaized.net",
         title="SuperSport 12",
         channel_number="212",
-        image_url="/images/programthumbnail_6.png",
+        image_url=EXAMPLE_LIVE_THUMBNAIL,
     ),
     _akamai_live(
         channel_tag="E1W",
@@ -108,7 +110,7 @@ DEFAULT_SEED_ITEMS: tuple[TestItemSpec, ...] = (
         live_cdn_host="r-live-cache.akamaized.net",
         title="ESPN",
         channel_number="218",
-        image_url="/images/programthumbnail_7.png",
+        image_url=EXAMPLE_LIVE_THUMBNAIL,
     ),
     _akamai_live(
         channel_tag="SDN",
@@ -116,7 +118,7 @@ DEFAULT_SEED_ITEMS: tuple[TestItemSpec, ...] = (
         live_cdn_host="r-live-cache.akamaized.net",
         title="NFL Network",
         channel_number="219",
-        image_url="/images/programthumbnail_8.png",
+        image_url=EXAMPLE_LIVE_THUMBNAIL,
     ),
     TestItemSpec(
         id="SS127028_SOC060626WCFBELVTUNHD10_SUN",

@@ -111,7 +111,6 @@ async def register_channel(
             category=body.category,
             channel_number=body.channelNumber,
             image_url=body.imageUrl,
-            direct_hls_url=body.directHlsUrl,
             live_manifest_cdn=body.liveManifestCdn,
         )
     except ValueError as exc:

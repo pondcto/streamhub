@@ -6,6 +6,11 @@ import { useToast } from "@/components/Toast";
 import Button from "@/components/ui/Button";
 import Field from "@/components/ui/Field";
 import { createChannel } from "@/lib/admin-api";
+import {
+  LIVE_THUMBNAIL_EXAMPLE,
+  liveThumbnailUrlError,
+  normalizeLiveThumbnailUrl,
+} from "@/lib/channel-thumbnail-url";
 
 const CATEGORIES = ["Live", "Sport", "Movies", "Series", "Other"] as const;
 
@@ -67,7 +72,6 @@ export default function AddChannelSection({ onCreated, onCancel }: AddChannelSec
   const [manifestHint, setManifestHint] = useState("");
   const [liveCdnHost, setLiveCdnHost] = useState<string>(LIVE_CDN_HOSTS[0].value);
   const [imageUrl, setImageUrl] = useState("");
-  const [directHlsUrl, setDirectHlsUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -81,6 +85,8 @@ export default function AddChannelSection({ onCreated, onCancel }: AddChannelSec
     if (manifestHint.trim() && (manifestHint.includes("hdntl=") || manifestHint.startsWith("http"))) {
       next.manifestHint = "Use the unsigned path only — no URL or hdntl token.";
     }
+    const thumbnailError = liveThumbnailUrlError(imageUrl, true);
+    if (thumbnailError) next.imageUrl = thumbnailError;
     return next;
   }
 
@@ -90,6 +96,7 @@ export default function AddChannelSection({ onCreated, onCancel }: AddChannelSec
     title.trim().length > 0 &&
     manifestHint.trim().length > 0 &&
     liveCdnHost.trim().length > 0 &&
+    imageUrl.trim().length > 0 &&
     !submitting;
 
   async function handleSubmit(event: React.FormEvent) {
@@ -100,6 +107,7 @@ export default function AddChannelSection({ onCreated, onCancel }: AddChannelSec
 
     setSubmitting(true);
     try {
+      const normalizedImageUrl = normalizeLiveThumbnailUrl(imageUrl, true)!;
       await createChannel({
         contentId: contentId.trim(),
         channelTag: channelTag.trim().toUpperCase(),
@@ -108,8 +116,7 @@ export default function AddChannelSection({ onCreated, onCancel }: AddChannelSec
         liveCdnHost: liveCdnHost.trim(),
         category,
         channelNumber: channelNumber.trim() || undefined,
-        imageUrl: imageUrl.trim() || undefined,
-        directHlsUrl: directHlsUrl.trim() || undefined,
+        imageUrl: normalizedImageUrl,
         liveManifestCdn: "akamai",
       });
       notify(`Registered ${title.trim()}. Capture its manifest on dstv.stream before starting.`, "success");
@@ -235,26 +242,24 @@ export default function AddChannelSection({ onCreated, onCancel }: AddChannelSec
         </section>
 
         <section className="space-y-4 rounded-2xl border border-white/10 bg-surface-raised p-5 shadow-card">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-content-faint">Optional</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-content-faint">Thumbnail</h3>
 
           <Field
-            label="Thumbnail image URL"
+            label="Live thumbnail URL *"
             value={imageUrl}
             onChange={(e) => setImageUrl(e.target.value)}
-            placeholder="/images/programthumbnail_3.png"
-            autoComplete="off"
-          />
-
-          <Field
-            label="Direct public HLS URL"
-            value={directHlsUrl}
-            onChange={(e) => setDirectHlsUrl(e.target.value)}
-            placeholder="https://live2.mzolotv.com/TS2/TS2.m3u8"
+            placeholder={LIVE_THUMBNAIL_EXAMPLE}
             type="url"
             autoComplete="off"
+            spellCheck={false}
+            error={errors.imageUrl}
+            required
           />
           <p className="-mt-2 text-[11px] leading-relaxed text-content-faint">
-            Optional preview URL that bypasses the local restreamer (unencrypted/public feeds only).
+            Remote DStv EPG image URL only — e.g.{" "}
+            <span className="font-mono text-content">images.dstv.stream/images/epg/…</span>. Local paths
+            like <span className="font-mono">/images/…</span> are not allowed.{" "}
+            <span className="font-mono">https://</span> is added automatically if omitted.
           </p>
         </section>
 

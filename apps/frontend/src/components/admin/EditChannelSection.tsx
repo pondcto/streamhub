@@ -6,6 +6,11 @@ import { useToast } from "@/components/Toast";
 import Button from "@/components/ui/Button";
 import Field from "@/components/ui/Field";
 import { updateChannel, type UpdateChannelInput } from "@/lib/admin-api";
+import {
+  LIVE_THUMBNAIL_EXAMPLE,
+  liveThumbnailUrlError,
+  normalizeLiveThumbnailUrl,
+} from "@/lib/channel-thumbnail-url";
 import type { AdminChannel } from "@/lib/types";
 
 const CATEGORIES = ["Live", "Sport", "Movies", "Series", "Other"] as const;
@@ -82,6 +87,8 @@ export default function EditChannelSection({ channel, onSaved, onCancel }: EditC
     if (manifestHint.trim() && (manifestHint.includes("hdntl=") || manifestHint.startsWith("http"))) {
       next.manifestHint = "Use the unsigned path only — no URL or hdntl token.";
     }
+    const thumbnailError = liveThumbnailUrlError(imageUrl, true);
+    if (thumbnailError) next.imageUrl = thumbnailError;
     return next;
   }
 
@@ -90,6 +97,7 @@ export default function EditChannelSection({ channel, onSaved, onCancel }: EditC
     title.trim().length > 0 &&
     manifestHint.trim().length > 0 &&
     liveCdnHost.trim().length > 0 &&
+    imageUrl.trim().length > 0 &&
     !submitting;
 
   async function handleSubmit(event: React.FormEvent) {
@@ -98,6 +106,7 @@ export default function EditChannelSection({ channel, onSaved, onCancel }: EditC
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
+    const normalizedImageUrl = normalizeLiveThumbnailUrl(imageUrl, true)!;
     const body: UpdateChannelInput = {
       channelTag: channelTag.trim().toUpperCase(),
       title: title.trim(),
@@ -105,7 +114,7 @@ export default function EditChannelSection({ channel, onSaved, onCancel }: EditC
       liveCdnHost: liveCdnHost.trim(),
       category,
       channelNumber: channelNumber.trim() || undefined,
-      imageUrl: imageUrl.trim() || undefined,
+      imageUrl: normalizedImageUrl,
       liveManifestCdn: "akamai",
     };
 
@@ -212,15 +221,24 @@ export default function EditChannelSection({ channel, onSaved, onCancel }: EditC
         </section>
 
         <section className="space-y-4 rounded-2xl border border-white/10 bg-surface-raised p-5 shadow-card">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-content-faint">Optional</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-content-faint">Thumbnail</h3>
 
           <Field
-            label="Thumbnail image URL"
+            label="Live thumbnail URL *"
             value={imageUrl}
             onChange={(e) => setImageUrl(e.target.value)}
-            placeholder="/images/programthumbnail_3.png"
+            placeholder={LIVE_THUMBNAIL_EXAMPLE}
+            type="url"
             autoComplete="off"
+            spellCheck={false}
+            error={errors.imageUrl}
+            required
           />
+          <p className="-mt-2 text-[11px] leading-relaxed text-content-faint">
+            Remote DStv EPG image URL only — e.g.{" "}
+            <span className="font-mono text-content">images.dstv.stream/images/epg/…</span>. Local paths are
+            not allowed.
+          </p>
         </section>
 
         <div className="flex items-center justify-end gap-3">
